@@ -17,6 +17,35 @@ const isolatedStyle = {
     },
   ],
 };
+const tileOutageStyle = {
+  version: 8,
+  name: 'HopOn deterministic tile-outage E2E style',
+  glyphs: 'http://127.0.0.1:4300/__e2e/glyphs/{fontstack}/{range}.pbf',
+  sources: {
+    'controlled-base-tiles': {
+      type: 'raster',
+      tiles: ['http://127.0.0.1:4300/__e2e/tiles/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenFreeMap',
+    },
+  },
+  layers: [
+    {
+      id: 'background',
+      type: 'background',
+      paint: { 'background-color': '#f1eee6' },
+    },
+    {
+      id: 'controlled-base-tiles',
+      type: 'raster',
+      source: 'controlled-base-tiles',
+    },
+  ],
+};
+const transparentTile = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4//8/AwAI/AL+p5qgoAAAAABJRU5ErkJggg==',
+  'base64',
+);
 
 test.beforeEach(async ({ page }) => {
   page.on('requestfailed', (request) => {
@@ -126,12 +155,72 @@ test('keeps search and tab draft usable when the OpenFreeMap style is unavailabl
   await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('.place-card').first()).toBeVisible();
 
+  for (const width of [360, 390, 1440]) {
+    await page.setViewportSize({ width, height: width === 360 ? 800 : width === 390 ? 844 : 900 });
+    await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible();
+    await expect(page.locator('.map-caption')).toContainText('Map style © OpenFreeMap');
+    await expect(page.locator('.map-caption')).toContainText('Map data © OpenStreetMap contributors');
+
+    const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
+    expect(documentWidth).toBeLessThanOrEqual(width);
+    const fallbackBounds = await page.locator('.map-viewport__fallback').boundingBox();
+    const caption = page.locator('.map-caption');
+    await caption.scrollIntoViewIfNeeded();
+    const captionBounds = await caption.boundingBox();
+    expect(fallbackBounds).not.toBeNull();
+    expect(captionBounds).not.toBeNull();
+    expect(captionBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(captionBounds!.x + captionBounds!.width).toBeLessThanOrEqual(width);
+  }
+
   const placeName = await page.locator('.place-card__name').first().innerText();
   await page.locator('#place-search').fill(placeName);
   await expect(page.locator('.place-card')).toHaveCount(1);
   const card = page.locator('.place-card').first();
   await card.scrollIntoViewIfNeeded();
   await card.click();
+  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
+  await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
+});
+
+test('keeps catalog selection usable after map tiles fail following style load', async ({ page }) => {
+  test.setTimeout(30_000);
+  let failTiles = false;
+  let failedTileRequests = 0;
+  const tileFailureBudget = 2;
+  await page.unroute(openFreeMapStyleUrl);
+  await page.route(openFreeMapStyleUrl, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(tileOutageStyle),
+    }),
+  );
+  await page.route('**/__e2e/tiles/**', async (route) => {
+    if (failTiles && failedTileRequests < tileFailureBudget) {
+      failedTileRequests += 1;
+      await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Synthetic tile outage' });
+      return;
+    }
+    await route.fulfill({ status: 200, contentType: 'image/png', body: transparentTile });
+  });
+
+  await page.goto('/');
+  await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
+  await expect(page.locator('.map-viewport__loading')).toHaveCount(0);
+  await expect(page.locator('.map-viewport__fallback')).toHaveCount(0);
+
+  failTiles = true;
+  await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
+  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
+  await expect.poll(() => failedTileRequests).toBeGreaterThan(0);
+  await expect(page.locator('.map-viewport__fallback')).toHaveCount(0);
+
+  const firstCard = page.locator('.place-card').first();
+  await expect(firstCard).toBeVisible();
+  const placeName = await firstCard.locator('.place-card__name').innerText();
+  await firstCard.click();
+  await expect(page.locator('.place-detail')).toContainText(placeName);
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
   await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
 });

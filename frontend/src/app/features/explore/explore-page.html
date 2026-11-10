@@ -23,19 +23,23 @@
         }
       </div>
 
-      <button
-        class="city-select"
-        type="button"
-        disabled
-        aria-label="Amsterdam selected. City selection will be available with the place guide."
-        title="City selection arrives with the place guide."
-      >
+      <label class="city-select" for="city-select">
         <span class="city-select__pin" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
         </span>
-        <span>Amsterdam</span>
+        <select
+          id="city-select"
+          [value]="selectedCityId()"
+          [disabled]="citiesLoading() || cities().length === 0"
+          (change)="onCitySelected($event)"
+          aria-label="Choose a city"
+        >
+          @for (city of cities(); track city.id) {
+            <option [value]="city.id">{{ city.name }}</option>
+          }
+        </select>
         <span class="city-select__chevron" aria-hidden="true">⌄</span>
-      </button>
+      </label>
       <span class="avatar" aria-hidden="true">H</span>
     </div>
   </header>
@@ -48,88 +52,289 @@
 
       <label class="search-box" for="place-search">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-        <input id="place-search" type="search" placeholder="Search places and neighborhoods" disabled aria-describedby="search-note" />
-        <kbd aria-hidden="true">⌘ K</kbd>
+        <input
+          id="place-search"
+          type="search"
+          placeholder="Search places"
+          [value]="searchQuery()"
+          (input)="onSearchInput($event)"
+          aria-describedby="search-note"
+        />
       </label>
-      <p class="control-note" id="search-note">Search opens when the verified place guide is ready.</p>
+      <p class="control-note" id="search-note">Search place names in {{ currentCityName() }}.</p>
 
       <div class="section-heading">
-        <h2>Start with a feeling</h2>
-        <span>COMING SOON</span>
+        <h2>Explore by type</h2>
+        <span>REAL PLACES</span>
       </div>
-      <div class="vibe-list" aria-label="Discover by vibe preview">
-        @for (theme of themes; track theme; let index = $index) {
-          <button class="vibe-card" type="button" disabled>
-            <span class="vibe-card__icon" [class.vibe-card__icon--2]="index === 1" [class.vibe-card__icon--3]="index === 2" aria-hidden="true">
-              {{ index === 0 ? '⌂' : index === 1 ? '✳' : '↟' }}
-            </span>
-            <span>{{ theme }}</span>
-            <span class="vibe-card__arrow" aria-hidden="true">↗</span>
+      <div class="filter-row" role="group" aria-label="Filter places by category">
+        @for (category of categoryOptions; track category.label) {
+          <button
+            class="filter-chip"
+            [class.filter-chip--selected]="activeCategory() === category.value"
+            [attr.aria-pressed]="activeCategory() === category.value"
+            type="button"
+            (click)="selectCategory(category.value)"
+          >
+            {{ category.label }}
           </button>
         }
       </div>
+      @if (hasActiveFilters()) {
+        <button class="clear-filters" type="button" (click)="clearFilters()">Clear filters</button>
+      }
 
-      <div class="discovery__bottom">
-        <div class="mini-note__icon" aria-hidden="true">✦</div>
-        <p><strong>Made for unhurried days.</strong><br />Pick a few places. Leave room to wander.</p>
-      </div>
+      <section class="discover-panel" aria-labelledby="discover-title">
+        <div class="section-heading">
+          <h2 id="discover-title">Discover by vibe</h2>
+          <span>FROM THIS CATALOG</span>
+        </div>
+        <div class="discover-themes" role="group" aria-label="Choose a discovery theme">
+          @for (theme of discoverThemes; track theme.value) {
+            <button
+              type="button"
+              class="discover-theme"
+              [class.discover-theme--selected]="activeDiscoverTheme() === theme.value"
+              [attr.aria-pressed]="activeDiscoverTheme() === theme.value"
+              [disabled]="placesLoading() || placesError() !== null"
+              (click)="chooseDiscoverTheme(theme.value)"
+            >
+              {{ theme.label }}
+            </button>
+          }
+        </div>
+
+        @if (activeDiscoverTheme(); as theme) {
+          <div class="discover-results" [attr.aria-busy]="discoverState() === 'loading'">
+            @if (discoverState() === 'loading') {
+              <p class="discover-message" role="status">Finding {{ theme }} places in {{ currentCityName() }}&#8230;</p>
+            } @else if (discoverState() === 'error') {
+              <div class="discover-error" role="alert">
+                <p>{{ discoverError() }}</p>
+                <button class="text-button" type="button" (click)="retryDiscover()">Retry</button>
+              </div>
+            } @else if (discoverResponse(); as response) {
+              <p class="discover-description">{{ response.description }}</p>
+              <p class="discover-count" role="status">
+                {{ discoverPlaces().length }} verified place{{ discoverPlaces().length === 1 ? '' : 's' }} highlighted
+              </p>
+              @if (discoverPlaces().length === 0) {
+                <p class="discover-message">No verified places matched this theme in {{ currentCityName() }}.</p>
+              } @else {
+                <ul class="discover-picks" aria-label="Verified places selected for this theme">
+                  @for (place of discoverPlaces(); track place.id) {
+                    <li>
+                      <button
+                        type="button"
+                        class="discover-pick"
+                        (click)="selectDiscoverPlace(place.id, $event.currentTarget)"
+                      >
+                        <span class="discover-pick__name">{{ place.name }}</span>
+                        <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
+                      </button>
+                    </li>
+                  }
+                </ul>
+                <button
+                  class="button button--secondary discover-add"
+                  type="button"
+                  (click)="addDiscoverSelection($event.currentTarget)"
+                >
+                  Add all to plan
+                </button>
+                @if (discoverVisibleCount() < discoverPlaces().length) {
+                  <p class="discover-filter-note">Clear search or category filters to show every pick on the map.</p>
+                }
+              }
+            }
+          </div>
+        }
+      </section>
+
+      <aside class="draft-panel" aria-labelledby="draft-panel-title">
+        <div class="section-heading">
+          <h2 id="draft-panel-title">Your day, taking shape</h2>
+          @if (draftStore.draft(); as draft) {
+            <span>{{ draft.placeIds.length }} {{ draft.placeIds.length === 1 ? 'PLACE' : 'PLACES' }}</span>
+          }
+        </div>
+        @if (draftStore.isValidating()) {
+          <p class="draft-copy" role="status">Checking places in this tab&#8217;s draft&#8230;</p>
+        } @else if (draftStore.validationError(); as validationError) {
+          <div class="draft-error" role="alert">
+            <p>{{ validationError }}</p>
+            <button class="text-button" type="button" (click)="retryDraftValidation()">Retry validation</button>
+          </div>
+        } @else if (draftStore.draft(); as draft) {
+          <p class="draft-name">{{ draft.name }}</p>
+          <p class="draft-copy">Tab draft only · not saved to server.</p>
+        } @else {
+          <p class="draft-copy">Add a place or a Discover selection to start a tab draft.</p>
+        }
+        @if (draftStore.storageUnavailable()) {
+          <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
+        }
+        @if (draftStore.restoreMessage(); as restoreMessage) {
+          <p class="draft-copy draft-copy--warning" role="status">{{ restoreMessage }}</p>
+        }
+        @if (draftFeedback()) {
+          <p class="draft-feedback" role="status" aria-live="polite">{{ draftFeedback() }}</p>
+        }
+        @if (draftStore.cityConflict(); as conflict) {
+          <section class="draft-conflict" role="region" aria-labelledby="draft-conflict-title">
+            <h3 #draftConflictHeading id="draft-conflict-title" tabindex="-1">Keep the existing draft?</h3>
+            <p>
+              This tab has a {{ draftStore.draft()?.cityId }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?
+            </p>
+            <div class="draft-conflict__actions">
+              <button class="button button--secondary" type="button" (click)="keepExistingDraft()">Keep existing</button>
+              <button class="button button--primary" type="button" (click)="startDraftForCurrentCity()">
+                Start new for {{ conflict.cityName }}
+              </button>
+            </div>
+          </section>
+        }
+      </aside>
+
     </section>
 
-    <section class="explore-main" aria-label="Amsterdam exploration preview">
-      <div class="explore-main__heading">
+    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
+      <div class="place-results__heading">
         <div>
-          <p class="eyebrow eyebrow--small">YOUR NEXT GOOD DAY</p>
-          <h2>Amsterdam <span>·</span> at a glance</h2>
+          <p class="eyebrow eyebrow--small">{{ currentCityName().toUpperCase() }}</p>
+          <h2 id="places-title">Places to explore</h2>
         </div>
-        <span class="ready-tag"><span aria-hidden="true"></span>City guide in progress</span>
-      </div>
-
-      <div class="filter-row" aria-label="Place category preview">
-        @for (category of categories; track category; let first = $first) {
-          <button class="filter-chip" [class.filter-chip--selected]="first" type="button" disabled>{{ category }}</button>
+        @if (placesLoading()) {
+          <span class="result-count" role="status">Loading…</span>
+        } @else {
+          <span class="result-count" aria-live="polite">{{ resultCount() }} places</span>
         }
       </div>
 
-      <section class="map-placeholder" id="map-preview" aria-labelledby="map-title">
-        <div class="map-placeholder__wash" aria-hidden="true"></div>
-        <div class="map-placeholder__grid" aria-hidden="true"></div>
-        <div class="map-placeholder__route map-placeholder__route--one" aria-hidden="true"></div>
-        <div class="map-placeholder__route map-placeholder__route--two" aria-hidden="true"></div>
-        <span class="map-placeholder__badge"><span aria-hidden="true"></span>Map preview</span>
-        <span class="map-placeholder__compass" aria-hidden="true">N</span>
-        <div class="map-placeholder__card">
-          <span class="map-placeholder__pin" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
-          </span>
-          <div>
-            <h3 id="map-title">Your city, at your pace</h3>
-            <p>The interactive map arrives with the verified place guide.</p>
-          </div>
+      @if (placesLoading()) {
+        <div class="place-skeleton-list" role="status" aria-label="Loading places">
+          @for (item of [1, 2, 3, 4]; track item) {
+            <div class="place-skeleton" aria-hidden="true">
+              <span></span><span></span><span></span>
+            </div>
+          }
         </div>
-      </section>
+      } @else if (placesError(); as error) {
+        <div class="state-card state-card--error" role="alert">
+          <span class="state-card__icon" aria-hidden="true">!</span>
+          <h3>Could not load places</h3>
+          <p>{{ error }}</p>
+          <button class="button button--primary" type="button" (click)="retryPlaces()">Retry</button>
+        </div>
+      } @else if (resultCount() === 0) {
+        <div class="state-card" role="status">
+          <span class="state-card__icon" aria-hidden="true">⌕</span>
+          <h3>No places found</h3>
+          <p>Try a different search or clear your filters.</p>
+          @if (hasActiveFilters()) {
+            <button class="button button--secondary" type="button" (click)="clearFilters()">Clear filters</button>
+          }
+        </div>
+      } @else {
+        <div class="place-list" aria-label="Places in {{ currentCityName() }}">
+          @for (place of visiblePlaces(); track place.id) {
+            <button
+              class="place-card"
+              [class.place-card--selected]="selectedPlaceId() === place.id"
+              [class.place-card--discover]="discoverPlaceIds().includes(place.id)"
+              [attr.aria-pressed]="selectedPlaceId() === place.id"
+              type="button"
+              (click)="selectPlace(place.id, $event.currentTarget)"
+            >
+              <span class="place-card__marker" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
+              </span>
+              <span class="place-card__content">
+                <span class="place-card__eyebrow">{{ categoryLabels[place.category] }}</span>
+                <span class="place-card__name">{{ place.name }}</span>
+                <span class="place-card__description">{{ place.shortDescription }}</span>
+                  @if (discoverPlaceIds().includes(place.id)) {
+                    <span class="place-card__discover-tag">Discover pick</span>
+                  }
+                <span class="place-card__tags">
+                  @for (tag of place.tags.slice(0, 2); track tag) {
+                    <span>{{ displayTag(tag) }}</span>
+                  }
+                </span>
+              </span>
+            </button>
+          }
+        </div>
+        @if (hasMorePlaces()) {
+          <button class="show-more" type="button" (click)="showMorePlaces()">
+            Show more places
+            <span>({{ resultCount() - visiblePlaceLimit() }} remaining)</span>
+          </button>
+        }
+      }
+    </section>
 
-      <div class="map-caption">
-        <span class="map-caption__status"><span aria-hidden="true"></span>PLACEHOLDER ONLY</span>
-        <span>No real map, locations or place data are loaded yet.</span>
+    <section
+      class="explore-main"
+      id="map-region"
+      tabindex="-1"
+      [attr.aria-label]="'Map and places in ' + currentCityName()"
+    >
+      <div class="explore-main__heading">
+        <div>
+          <p class="eyebrow eyebrow--small">YOUR NEXT GOOD DAY</p>
+          <h2>{{ currentCityName() }} <span>·</span> at a glance</h2>
+        </div>
+        <span class="ready-tag"><span aria-hidden="true"></span>Verified city guide</span>
       </div>
 
-      <section class="below-map" aria-labelledby="plan-title">
-        <div>
-          <p class="eyebrow eyebrow--small">A CITY, YOUR WAY</p>
-          <h2 id="plan-title">Good trips begin<br />with one small plan.</h2>
+      @if (currentCity(); as city) {
+        <app-map-viewport
+          [city]="city"
+          [places]="filteredPlaces()"
+          [selectedPlaceId]="selectedPlaceId()"
+          [discoverPlaceIds]="discoverPlaceIds()"
+          (placeSelected)="selectPlace($event)"
+          (browsePlaces)="browsePlaces()"
+        />
+      } @else {
+        <div class="map-pending" role="status" aria-live="polite">
+          @if (citiesLoading()) {
+            <span class="map-pending__spinner" aria-hidden="true"></span>
+            <span>Loading city guide…</span>
+          } @else {
+            <h3>Could not load city details</h3>
+            <p>{{ citiesError() }}</p>
+            <button class="button button--primary" type="button" (click)="retryCities()">Retry</button>
+          }
         </div>
-        <div class="plan-teaser">
-          <span class="plan-teaser__number" aria-hidden="true">01</span>
-          <div><strong>Save the places you love</strong><p>Your personal plan will live here.</p></div>
-          <span class="plan-teaser__arrow" aria-hidden="true">↗</span>
-        </div>
-      </section>
+      }
+
+      <div class="map-caption">
+        <span class="map-caption__status"><span aria-hidden="true"></span>INTERACTIVE MAP</span>
+        <span>Map style © OpenFreeMap · Map data © OpenStreetMap contributors</span>
+      </div>
+
+      @if (selectedPlace(); as place) {
+        <app-place-detail
+          [place]="place"
+          [cityName]="currentCityName()"
+          [categoryLabel]="categoryLabels[place.category]"
+          [nearbyHubs]="nearbyHubs()"
+          [hubsLoading]="hubsLoading()"
+          [hubsError]="hubsError()"
+          [draftContainsPlace]="hasPlaceInDraft(place.id)"
+          (closed)="closePlaceDetails()"
+          (addPlace)="addDetailPlaceToPlan($event)"
+          (retryHubs)="retryHubs()"
+        />
+      }
     </section>
   </main>
 
   <footer class="footer-note">
     <span>HopOn Netherlands</span>
-    <span>Verified city details and map attribution will appear with real data.</span>
+    <span>Browse independently; map availability depends on your connection.</span>
   </footer>
 
   <nav class="bottom-nav" aria-label="Main navigation">
@@ -137,7 +342,7 @@
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
       <span>Explore</span>
     </a>
-    <a class="bottom-nav__item" href="#map-preview">
+    <a class="bottom-nav__item" href="#map-region">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg>
       <span>Map</span>
     </a>

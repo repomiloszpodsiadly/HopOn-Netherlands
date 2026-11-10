@@ -1,0 +1,65 @@
+<aside class="place-detail" aria-labelledby="place-detail-title">
+  <div class="place-detail__grabber" aria-hidden="true"></div>
+  <div class="place-detail__topline">
+    <p class="place-detail__category">{{ categoryLabel }}</p>
+    <button
+      class="place-detail__close"
+      type="button"
+      aria-label="Close place details"
+      (click)="closed.emit()"
+    >
+      <span aria-hidden="true">&#215;</span>
+    </button>
+  </div>
+  <div class="place-detail__visual">
+    @if (isLicensedLocalImage()) {
+      <img [src]="place.imagePath" [alt]="place.name" loading="lazy" (error)="onImageError()" />
+      <span>Image reference: {{ place.imageAttributionId }}</span>
+    } @else {
+      <span class="place-detail__fallback-mark" aria-hidden="true">&#10022;</span>
+      <span>From the verified {{ cityName }} catalog</span>
+    }
+  </div>
+  <h2 #heading id="place-detail-title" tabindex="-1">{{ place.name }}</h2>
+  <p class="place-detail__description">{{ place.shortDescription }}</p>
+  <p class="place-detail__location">
+    {{ cityName }} · {{ place.latitude.toFixed(4) }}, {{ place.longitude.toFixed(4) }}
+  </p>
+  <section class="nearby-section" aria-labelledby="nearby-title">
+    <div class="nearby-section__heading">
+      <h3 id="nearby-title">Nearby transport hubs</h3>
+      <span>CURATED</span>
+    </div>
+    @if (hubsLoading) {
+      <p class="nearby-message" role="status">Checking nearby hubs&#8230;</p>
+    } @else if (hubsError; as error) {
+      <div class="nearby-error" role="alert">
+        <p>{{ error }}</p>
+        <button class="text-button" type="button" (click)="retryHubs.emit()">Retry</button>
+      </div>
+    } @else if (nearbyHubs.length === 0) {
+      <p class="nearby-message">No curated nearby hub listed.</p>
+    } @else {
+      <ul class="nearby-list">
+        @for (nearby of nearbyHubs; track nearby.hub.id) {
+          <li>
+            <strong>{{ nearby.hub.name }}</strong>
+            <span>{{ formatModes(nearby.hub.modes) }}</span>
+            <small>Approx. straight-line distance: {{ formatDistance(nearby.distanceMeters) }}</small>
+            @if (openStreetMapSource(nearby.hub.source); as source) {
+              <a [href]="source" target="_blank" rel="noopener noreferrer">OpenStreetMap source</a>
+            }
+          </li>
+        }
+      </ul>
+    }
+  </section>
+  <div class="place-detail__actions">
+    @if (draftContainsPlace) {
+      <span class="added-badge" role="status">Added</span>
+    }
+    <button class="place-detail__add" type="button" (click)="requestAdd($event)">
+      Add to plan
+    </button>
+  </div>
+</aside>

@@ -1,0 +1,146 @@
+<div class="site-shell" id="top">
+  <header class="topbar">
+    <a class="brand" href="#top" aria-label="HopOn Netherlands home">
+      <span class="brand__symbol" aria-hidden="true"><span></span></span>
+      <span class="brand__wordmark">hopon<span>.</span></span>
+    </a>
+
+    <div class="topbar__right">
+      <div
+        class="api-status"
+        [class.api-status--online]="apiState() === 'online'"
+        [class.api-status--offline]="apiState() === 'offline'"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="api-status__dot" aria-hidden="true"></span>
+        <span>{{ apiStatusText() }}</span>
+        @if (apiState() === 'offline') {
+          <button class="api-status__retry" type="button" (click)="retryHealthCheck()">Retry</button>
+        }
+      </div>
+
+      <button
+        class="city-select"
+        type="button"
+        disabled
+        aria-label="Amsterdam selected. City selection will be available with the place guide."
+        title="City selection arrives with the place guide."
+      >
+        <span class="city-select__pin" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
+        </span>
+        <span>Amsterdam</span>
+        <span class="city-select__chevron" aria-hidden="true">⌄</span>
+      </button>
+      <span class="avatar" aria-hidden="true">H</span>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="discovery" aria-labelledby="welcome-title">
+      <div class="eyebrow"><span class="eyebrow__line" aria-hidden="true"></span>A little more local</div>
+      <h1 id="welcome-title">Find your own<br /><em>way around.</em></h1>
+      <p class="intro">A thoughtful guide to the places, corners and small discoveries that make a Dutch city feel like yours.</p>
+
+      <label class="search-box" for="place-search">
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        <input id="place-search" type="search" placeholder="Search places and neighborhoods" disabled aria-describedby="search-note" />
+        <kbd aria-hidden="true">⌘ K</kbd>
+      </label>
+      <p class="control-note" id="search-note">Search opens when the verified place guide is ready.</p>
+
+      <div class="section-heading">
+        <h2>Start with a feeling</h2>
+        <span>COMING SOON</span>
+      </div>
+      <div class="vibe-list" aria-label="Discover by vibe preview">
+        @for (theme of themes; track theme; let index = $index) {
+          <button class="vibe-card" type="button" disabled>
+            <span class="vibe-card__icon" [class.vibe-card__icon--2]="index === 1" [class.vibe-card__icon--3]="index === 2" aria-hidden="true">
+              {{ index === 0 ? '⌂' : index === 1 ? '✳' : '↟' }}
+            </span>
+            <span>{{ theme }}</span>
+            <span class="vibe-card__arrow" aria-hidden="true">↗</span>
+          </button>
+        }
+      </div>
+
+      <div class="discovery__bottom">
+        <div class="mini-note__icon" aria-hidden="true">✦</div>
+        <p><strong>Made for unhurried days.</strong><br />Pick a few places. Leave room to wander.</p>
+      </div>
+    </section>
+
+    <section class="explore-main" aria-label="Amsterdam exploration preview">
+      <div class="explore-main__heading">
+        <div>
+          <p class="eyebrow eyebrow--small">YOUR NEXT GOOD DAY</p>
+          <h2>Amsterdam <span>·</span> at a glance</h2>
+        </div>
+        <span class="ready-tag"><span aria-hidden="true"></span>City guide in progress</span>
+      </div>
+
+      <div class="filter-row" aria-label="Place category preview">
+        @for (category of categories; track category; let first = $first) {
+          <button class="filter-chip" [class.filter-chip--selected]="first" type="button" disabled>{{ category }}</button>
+        }
+      </div>
+
+      <section class="map-placeholder" id="map-preview" aria-labelledby="map-title">
+        <div class="map-placeholder__wash" aria-hidden="true"></div>
+        <div class="map-placeholder__grid" aria-hidden="true"></div>
+        <div class="map-placeholder__route map-placeholder__route--one" aria-hidden="true"></div>
+        <div class="map-placeholder__route map-placeholder__route--two" aria-hidden="true"></div>
+        <span class="map-placeholder__badge"><span aria-hidden="true"></span>Map preview</span>
+        <span class="map-placeholder__compass" aria-hidden="true">N</span>
+        <div class="map-placeholder__card">
+          <span class="map-placeholder__pin" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
+          </span>
+          <div>
+            <h3 id="map-title">Your city, at your pace</h3>
+            <p>The interactive map arrives with the verified place guide.</p>
+          </div>
+        </div>
+      </section>
+
+      <div class="map-caption">
+        <span class="map-caption__status"><span aria-hidden="true"></span>PLACEHOLDER ONLY</span>
+        <span>No real map, locations or place data are loaded yet.</span>
+      </div>
+
+      <section class="below-map" aria-labelledby="plan-title">
+        <div>
+          <p class="eyebrow eyebrow--small">A CITY, YOUR WAY</p>
+          <h2 id="plan-title">Good trips begin<br />with one small plan.</h2>
+        </div>
+        <div class="plan-teaser">
+          <span class="plan-teaser__number" aria-hidden="true">01</span>
+          <div><strong>Save the places you love</strong><p>Your personal plan will live here.</p></div>
+          <span class="plan-teaser__arrow" aria-hidden="true">↗</span>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <footer class="footer-note">
+    <span>HopOn Netherlands</span>
+    <span>Verified city details and map attribution will appear with real data.</span>
+  </footer>
+
+  <nav class="bottom-nav" aria-label="Main navigation">
+    <a class="bottom-nav__item bottom-nav__item--active" href="#top" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
+      <span>Explore</span>
+    </a>
+    <a class="bottom-nav__item" href="#map-preview">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg>
+      <span>Map</span>
+    </a>
+    <button class="bottom-nav__item" type="button" disabled aria-label="Plans will be available in a later phase">
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4.5h10a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6"/><path d="M5 17.5a2 2 0 0 1 2-2h12M9 9h6M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+      <span>Plans</span>
+    </button>
+  </nav>
+</div>

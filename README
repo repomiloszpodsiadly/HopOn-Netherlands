@@ -1,0 +1,25 @@
+﻿# HopOn Netherlands
+
+## Run locally (Windows PowerShell)
+
+Terminal 1, from the repository root:
+
+```powershell
+.\.tools\run-backend.ps1
+```
+
+This starts the Java 27 / Spring Boot API at `http://localhost:8080` using the Gradle 9.8.2 wrapper.
+
+Terminal 2:
+
+```powershell
+cd frontend
+npm ci
+npm start
+```
+
+Use a Node.js version matching `^22.22.3 || ^24.15.0 || ^26.0.0` from `frontend/package.json`. Open `http://localhost:4200`. Angular proxies `/api/**` to the backend; `npm run start:lan` serves the UI on the local network.
+
+The backend uses in-memory H2, so its data resets when it stops.
+
+HopOn is an Angular mobile-first guide to Dutch cities. The current foundation includes the responsive app shell and Spring health endpoint.

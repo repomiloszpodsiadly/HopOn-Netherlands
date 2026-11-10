@@ -1,1 +1,17 @@
 .idea/
+prompts/
+.tools/angular-scaffold/
+.tools/gradle-9.8.2/
+.tools/gradle-9.8.2-bin.zip
+.tools/jdk-27/
+.tools/jdk-27.*/
+.tools/jdk-27-*.zip
+.tools/node-v24.20.0/
+.tools/node-v24.20.0-win-x64.zip
+.tools/wrapper.gradle
+frontend/node_modules/
+frontend/.angular/
+frontend/dist/
+frontend/coverage/
+frontend/tsconfig.tsbuildinfo
+frontend/AGENTS.md

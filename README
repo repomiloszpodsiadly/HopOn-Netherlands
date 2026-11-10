@@ -1,4 +1,6 @@
-﻿# HopOn Netherlands
+# HopOn Netherlands
+
+HopOn is a mobile-first guide to real places in Amsterdam, Rotterdam and Utrecht. Search and filter the curated catalog, explore places on a MapLibre map, view nearby mobility hubs and build a tab-only Discover draft.
 
 ## Run locally (Windows PowerShell)
 
@@ -10,7 +12,7 @@ Terminal 1, from the repository root:
 
 This starts the Java 27 / Spring Boot API at `http://localhost:8080` using the Gradle 9.8.2 wrapper.
 
-Terminal 2:
+Terminal 2, from the repository root:
 
 ```powershell
 cd frontend
@@ -18,8 +20,12 @@ npm ci
 npm start
 ```
 
-Use a Node.js version matching `^22.22.3 || ^24.15.0 || ^26.0.0` from `frontend/package.json`. Open `http://localhost:4200`. Angular proxies `/api/**` to the backend; `npm run start:lan` serves the UI on the local network.
+Use a Node.js version matching `^22.22.3 || ^24.15.0 || ^26.0.0` from `frontend/package.json`. Open `http://localhost:4200`. Angular proxies `/api/**` to the backend. `npm run start:lan` serves the UI on the local network.
 
-The backend uses in-memory H2, so its data resets when it stops.
+## Checks
 
-HopOn is an Angular mobile-first guide to Dutch cities. The current foundation includes the responsive app shell and Spring health endpoint.
+From `frontend/`, run `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`.
+
+For browser E2E, keep the backend running, install Chromium once with `npx playwright install chromium`, then run `npm run test:e2e`. The tests start a separate Angular server on port 4300 and use the real API proxy.
+
+The backend uses in-memory H2, so its data resets when it stops. The city catalog is a static OpenStreetMap snapshot; map styles and tiles require a network connection.

@@ -6,6 +6,9 @@ import { MapViewportComponent } from './map-viewport';
 interface MockEvent {
   features?: readonly Readonly<{ properties?: Readonly<Record<string, unknown>> }>[];
   lngLat?: Readonly<{ lng: number; lat: number }>;
+  error?: Error;
+  sourceId?: string;
+  sourceDataType?: string;
 }
 
 type MockHandler = (event?: MockEvent) => void;
@@ -33,6 +36,9 @@ interface MockMap {
   addSource: (id: string, definition: unknown) => void;
   getSource: (id: string) => MockSource | undefined;
   getCanvas: () => MockCanvas;
+  getZoom: ReturnType<typeof vi.fn>;
+  stop: ReturnType<typeof vi.fn>;
+  setPadding: ReturnType<typeof vi.fn>;
   flyTo: ReturnType<typeof vi.fn>;
   easeTo: ReturnType<typeof vi.fn>;
   off: ReturnType<typeof vi.fn>;
@@ -50,6 +56,9 @@ vi.mock('maplibre-gl', () => {
     readonly sources: Record<string, MockSource> = {};
     readonly layers: unknown[] = [];
     readonly addControl = vi.fn();
+    readonly getZoom = vi.fn(() => 12.2);
+    readonly stop = vi.fn();
+    readonly setPadding = vi.fn();
     readonly flyTo = vi.fn();
     readonly easeTo = vi.fn();
     readonly off = vi.fn((event: string, layerOrHandler: string | MockHandler, handler?: MockHandler) => {
@@ -167,6 +176,22 @@ const PLACE: PlaceDto = {
   imageAttributionId: null,
 };
 
+const DISTANT_PLACE: PlaceDto = {
+  ...PLACE,
+  id: 'place-on-city-edge',
+  name: 'A distant place',
+  latitude: 52.43,
+  longitude: 5.0,
+};
+
+const ROTTERDAM_PLACE: PlaceDto = {
+  ...PLACE,
+  id: 'rotterdam-place',
+  cityId: 'rotterdam',
+  latitude: 51.91,
+  longitude: 4.6,
+};
+
 @Component({
   standalone: true,
   imports: [MapViewportComponent],
@@ -189,6 +214,7 @@ describe('MapViewportComponent', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   async function waitForMap(): Promise<MockMap> {
@@ -258,6 +284,187 @@ describe('MapViewportComponent', () => {
     fixture.destroy();
   });
 
+  it('focuses a selected marker beyond cluster zoom once without recreating the map', async () => {
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [DISTANT_PLACE]);
+    fixture.detectChanges();
+    const component = fixture.componentInstance;
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    map.flyTo.mockClear();
+
+    component.placeSelected.subscribe((placeId) => {
+      fixture.componentRef.setInput('selectedPlaceId', placeId);
+    });
+    map.emit('click', 'hopon-place-points', {
+      features: [{ properties: { placeId: DISTANT_PLACE.id } }],
+    });
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(map.flyTo).toHaveBeenCalledOnce();
+    expect(map.flyTo).toHaveBeenCalledWith({
+      center: [DISTANT_PLACE.longitude, DISTANT_PLACE.latitude],
+      zoom: 14,
+      duration: 450,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
+    expect(map.getSource('hopon-places')?.data).toMatchObject({
+      features: [{ id: DISTANT_PLACE.id, properties: { selected: true } }],
+    });
+    expect(mockMapState.instances).toHaveLength(1);
+
+    fixture.componentRef.setInput('selectedPlaceId', DISTANT_PLACE.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(map.flyTo).toHaveBeenCalledOnce();
+    fixture.destroy();
+  });
+
+  it('focuses the latest selection when it arrives before the map style loads', async () => {
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    fixture.detectChanges();
+    const map = await waitForMap();
+
+    fixture.componentRef.setInput('city', ROTTERDAM);
+    fixture.componentRef.setInput('places', [ROTTERDAM_PLACE]);
+    fixture.componentRef.setInput('selectedPlaceId', ROTTERDAM_PLACE.id);
+    fixture.detectChanges();
+    map.emit('load');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(mockMapState.instances).toHaveLength(1);
+    expect(map.flyTo).toHaveBeenCalledOnce();
+    expect(map.flyTo).toHaveBeenCalledWith({
+      center: [ROTTERDAM_PLACE.longitude, ROTTERDAM_PLACE.latitude],
+      zoom: 14,
+      duration: 450,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
+    });
+    fixture.destroy();
+  });
+
+  it('cancels stale selected-place movement during rapid city switches', async () => {
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
+    fixture.detectChanges();
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('city', ROTTERDAM);
+    fixture.componentRef.setInput('places', []);
+    fixture.componentRef.setInput('selectedPlaceId', null);
+    fixture.detectChanges();
+    fixture.componentRef.setInput('city', {
+      id: 'utrecht',
+      name: 'Utrecht',
+      center: { latitude: 52.09, longitude: 5.12 },
+      defaultZoom: 12.4,
+    } satisfies CityDto);
+    fixture.detectChanges();
+
+    expect(mockMapState.instances).toHaveLength(1);
+    expect(map.stop).toHaveBeenCalled();
+    expect(map.flyTo).toHaveBeenLastCalledWith({
+      center: [5.12, 52.09],
+      zoom: 12.4,
+      duration: 650,
+    });
+    fixture.destroy();
+  });
+
+  it('stops a pending focus when the selected place is filtered out', async () => {
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    fixture.detectChanges();
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    map.stop.mockClear();
+    map.flyTo.mockClear();
+
+    fixture.componentRef.setInput('places', []);
+    fixture.detectChanges();
+
+    expect(map.stop).toHaveBeenCalledOnce();
+    expect(map.flyTo).not.toHaveBeenCalled();
+    fixture.destroy();
+  });
+
+  it('uses zero-duration focus when reduced motion is requested', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+    })));
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    fixture.detectChanges();
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    map.flyTo.mockClear();
+
+    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(map.flyTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [PLACE.longitude, PLACE.latitude],
+      duration: 0,
+    }));
+    fixture.destroy();
+  });
+
+  it('offsets focus above the visible mobile detail sheet', async () => {
+    vi.stubGlobal('matchMedia', vi.fn((query: string) => ({
+      matches: query === '(max-width: 760px)',
+    })));
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    fixture.detectChanges();
+    const mapHost = fixture.nativeElement.querySelector('.map-viewport__canvas') as HTMLElement;
+    vi.spyOn(mapHost, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 400, 400));
+    const panel = document.createElement('aside');
+    panel.className = 'place-detail';
+    vi.spyOn(panel, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 180, 400, 220));
+    fixture.nativeElement.append(panel);
+
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    await fixture.whenStable();
+    map.flyTo.mockClear();
+
+    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+
+    expect(map.flyTo).toHaveBeenCalledWith(expect.objectContaining({
+      center: [PLACE.longitude, PLACE.latitude],
+      padding: { top: 0, right: 0, bottom: 220, left: 0 },
+    }));
+    fixture.destroy();
+  });
+
   it('selects a point and expands a clicked cluster', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
     fixture.componentRef.setInput('city', CITY);
@@ -297,7 +504,11 @@ describe('MapViewportComponent', () => {
     const map = await waitForMap();
     map.emit('load');
 
-    map.emit('error');
+    map.emit('error', undefined, {
+      error: new Error('Raster tile request failed with HTTP 503'),
+      sourceId: 'openfreemap-base',
+      sourceDataType: 'content',
+    });
     expect(component.mapReady()).toBe(true);
     expect(component.mapUnavailable()).toBe(false);
 

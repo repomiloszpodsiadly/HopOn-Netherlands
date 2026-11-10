@@ -1,6 +1,22 @@
-import { AfterViewInit, ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild, signal } from '@angular/core';
+import {
+  AfterViewInit,
+  afterNextRender,
+  ChangeDetectionStrategy,
+  Component,
+  ElementRef,
+  EventEmitter,
+  inject,
+  Injector,
+  Input,
+  OnChanges,
+  OnDestroy,
+  Output,
+  SimpleChanges,
+  ViewChild,
+  signal,
+} from '@angular/core';
 import { FeatureCollection, Point } from 'geojson';
-import type { GeoJSONSource, Map as MapLibreMap, MapLayerMouseEvent } from 'maplibre-gl';
+import type { GeoJSONSource, Map as MapLibreMap, MapLayerMouseEvent, PaddingOptions } from 'maplibre-gl';
 import { CityDto, PlaceDto } from '../../core/models/catalog.models';
 
 const OPENFREEMAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
@@ -9,6 +25,10 @@ const CLUSTERS_LAYER_ID = 'hopon-place-clusters';
 const CLUSTER_COUNT_LAYER_ID = 'hopon-cluster-count';
 const PLACE_POINTS_LAYER_ID = 'hopon-place-points';
 const MAP_LOAD_TIMEOUT_MS = 12_000;
+const MIN_PLACE_FOCUS_ZOOM = 14;
+const MAX_PLACE_FOCUS_ZOOM = 16;
+const PLACE_FOCUS_DURATION_MS = 450;
+const NO_MAP_PADDING: PaddingOptions = { top: 0, right: 0, bottom: 0, left: 0 };
 
 type PlaceFeatureProperties = Readonly<{
   placeId: string;
@@ -38,10 +58,12 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   readonly mapReady = signal(false);
   readonly mapUnavailable = signal(false);
 
+  private readonly injector = inject(Injector);
   private map: MapLibreMap | null = null;
   private mapLoadTimeout: ReturnType<typeof setTimeout> | null = null;
   private mapCleanup: (() => void)[] = [];
   private mapGeneration = 0;
+  private cameraOperation = 0;
   private destroyed = false;
 
   ngAfterViewInit(): void {
@@ -49,14 +71,48 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (this.map === null) {
+    const map = this.map;
+    if (map === null) {
       return;
     }
-    if (changes['city'] && this.mapReady()) {
-      this.moveToCity();
+
+    const cityChanged = changes['city'] !== undefined;
+    const selectionChanged = changes['selectedPlaceId'] !== undefined;
+    const placesChanged = changes['places'] !== undefined
+      || selectionChanged
+      || changes['discoverPlaceIds'] !== undefined;
+    const selectionInvalidated = placesChanged
+      && this.selectedPlaceId !== null
+      && this.currentSelectedPlace() === null;
+
+    if (cityChanged || selectionChanged || selectionInvalidated) {
+      this.cameraOperation += 1;
+      map.stop();
     }
-    if ((changes['places'] || changes['selectedPlaceId'] || changes['discoverPlaceIds']) && this.mapReady()) {
+
+    if (placesChanged && this.mapReady()) {
       this.updatePlacesSource();
+    }
+
+    if (!this.mapReady()) {
+      return;
+    }
+    if (cityChanged) {
+      if (this.currentSelectedPlace() !== null) {
+        this.scheduleSelectedPlaceFocus();
+      } else {
+        this.moveToCity();
+      }
+      return;
+    }
+    if (selectionChanged) {
+      if (this.currentSelectedPlace() !== null) {
+        this.scheduleSelectedPlaceFocus();
+      } else {
+        this.resetMapPadding(map);
+      }
+    } else if (selectionInvalidated) {
+      this.resetMapPadding(map);
     }
   }
 
@@ -178,7 +234,11 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       });
       this.registerMapEvents(map, generation);
       this.mapReady.set(true);
-      this.moveToCity();
+      if (this.currentSelectedPlace() !== null) {
+        this.scheduleSelectedPlaceFocus();
+      } else {
+        this.moveToCity();
+      }
     } catch {
       this.markUnavailable(map, generation);
     }
@@ -194,11 +254,17 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       if (typeof clusterId !== 'number' || !source) {
         return;
       }
+      const cameraOperation = ++this.cameraOperation;
+      map.stop();
       void source
         .getClusterExpansionZoom(clusterId)
         .then((zoom) => {
-          if (this.isCurrentMap(map, generation)) {
-            map.easeTo({ center: event.lngLat, zoom, duration: 350 });
+          if (this.isCurrentMap(map, generation) && cameraOperation === this.cameraOperation) {
+            map.easeTo({
+              center: event.lngLat,
+              zoom,
+              duration: this.prefersReducedMotion() ? 0 : 350,
+            });
           }
         })
         .catch(() => undefined);
@@ -238,17 +304,99 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private moveToCity(): void {
-    if (this.map === null) {
+    const map = this.map;
+    if (map === null) {
       return;
     }
-    const reducedMotion =
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.map.flyTo({
+    this.cameraOperation += 1;
+    map.stop();
+    this.resetMapPadding(map);
+    map.flyTo({
       center: [this.city.center.longitude, this.city.center.latitude],
       zoom: this.city.defaultZoom,
-      duration: reducedMotion ? 0 : 650,
+      duration: this.prefersReducedMotion() ? 0 : 650,
     });
+  }
+
+  private scheduleSelectedPlaceFocus(): void {
+    const map = this.map;
+    const placeId = this.selectedPlaceId;
+    if (map === null || placeId === null) {
+      return;
+    }
+
+    const generation = this.mapGeneration;
+    const cameraOperation = ++this.cameraOperation;
+    afterNextRender(() => {
+      if (!this.isCurrentMap(map, generation) || cameraOperation !== this.cameraOperation) {
+        return;
+      }
+      const place = this.currentSelectedPlace();
+      if (place === null || place.id !== placeId) {
+        return;
+      }
+
+      const zoom = Math.min(MAX_PLACE_FOCUS_ZOOM, Math.max(MIN_PLACE_FOCUS_ZOOM, map.getZoom()));
+      const padding = this.selectedPlacePadding();
+      this.resetMapPadding(map);
+      map.flyTo({
+        center: [place.longitude, place.latitude],
+        zoom,
+        duration: this.prefersReducedMotion() ? 0 : PLACE_FOCUS_DURATION_MS,
+        padding,
+      });
+    }, { injector: this.injector });
+  }
+
+  private currentSelectedPlace(): PlaceDto | null {
+    const placeId = this.selectedPlaceId;
+    if (placeId === null) {
+      return null;
+    }
+    return this.places.find((place) => place.id === placeId && place.cityId === this.city.id) ?? null;
+  }
+
+  private selectedPlacePadding(): PaddingOptions {
+    const panel = document.querySelector<HTMLElement>('.place-detail');
+    if (panel === null) {
+      return NO_MAP_PADDING;
+    }
+
+    const mapBounds = this.mapHost.nativeElement.getBoundingClientRect();
+    const panelBounds = panel.getBoundingClientRect();
+    const overlapsMap = panelBounds.right > mapBounds.left
+      && panelBounds.left < mapBounds.right
+      && panelBounds.bottom > mapBounds.top
+      && panelBounds.top < mapBounds.bottom;
+    if (!overlapsMap || mapBounds.width <= 0 || mapBounds.height <= 0) {
+      return NO_MAP_PADDING;
+    }
+
+    const mobileLayout = typeof window.matchMedia === 'function'
+      ? window.matchMedia('(max-width: 760px)').matches
+      : window.innerWidth <= 760;
+    if (mobileLayout) {
+      const bottom = Math.min(
+        mapBounds.bottom - Math.max(mapBounds.top, panelBounds.top),
+        mapBounds.height * 0.75,
+      );
+      return { ...NO_MAP_PADDING, bottom: Math.max(0, bottom) };
+    }
+
+    const right = Math.min(
+      mapBounds.right - Math.max(mapBounds.left, panelBounds.left),
+      mapBounds.width * 0.48,
+    );
+    return { ...NO_MAP_PADDING, right: Math.max(0, right) };
+  }
+
+  private resetMapPadding(map: MapLibreMap): void {
+    map.setPadding(NO_MAP_PADDING);
+  }
+
+  private prefersReducedMotion(): boolean {
+    return typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   }
 
   private updatePlacesSource(): void {
@@ -297,6 +445,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private disposeMap(): void {
+    this.cameraOperation += 1;
     this.mapGeneration += 1;
     this.clearMapLoadTimeout();
     const map = this.map;

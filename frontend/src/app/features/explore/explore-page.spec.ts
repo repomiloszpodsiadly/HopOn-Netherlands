@@ -319,6 +319,14 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelectorAll('.place-card--discover')).toHaveLength(2);
     expect(harness.routeNativeElement?.textContent).toContain('2 verified places highlighted');
 
+    (harness.routeNativeElement?.querySelector('.discover-pick') as HTMLButtonElement).click();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.selectedPlaceId()).toBe('museumplein');
+    expect(map.selectedPlaceId).toBe('museumplein');
+    expect(harness.routeNativeElement?.querySelector('#place-detail-title')?.textContent)
+      .toContain('Museumplein');
+
     const addAll = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
       .find((button) => button.textContent?.trim() === 'Add all to plan') as HTMLButtonElement;
     addAll.click();

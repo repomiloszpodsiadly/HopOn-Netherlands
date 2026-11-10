@@ -116,13 +116,14 @@ test('adds Discover places once, restores the tab draft, and asks before changin
 });
 
 test('keeps search and tab draft usable when the OpenFreeMap style is unavailable', async ({ page }) => {
+  test.setTimeout(20_000);
   await page.unroute('**/styles/liberty');
   await page.route(openFreeMapStyleUrl, (route) =>
     route.fulfill({ status: 503, contentType: 'text/plain', body: 'Map style unavailable in this test' }),
   );
 
   await page.goto('/');
-  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
   await expect(page.locator('.place-card').first()).toBeVisible();
 
   const placeName = await page.locator('.place-card__name').first().innerText();

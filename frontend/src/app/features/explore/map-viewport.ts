@@ -40,6 +40,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
 
   private map: MapLibreMap | null = null;
   private mapLoadTimeout: ReturnType<typeof setTimeout> | null = null;
+  private mapCleanup: (() => void)[] = [];
   private mapGeneration = 0;
   private destroyed = false;
 
@@ -65,6 +66,9 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   retry(): void {
+    if (this.destroyed) {
+      return;
+    }
     this.disposeMap();
     this.mapReady.set(false);
     this.mapUnavailable.set(false);
@@ -83,7 +87,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     const generation = ++this.mapGeneration;
     this.mapLoadTimeout = setTimeout(() => {
       if (generation === this.mapGeneration && !this.mapReady()) {
-        this.markUnavailable();
+        this.markUnavailable(undefined, generation);
       }
     }, MAP_LOAD_TIMEOUT_MS);
 
@@ -105,17 +109,25 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       });
       this.map = map;
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
-      map.on('load', () => this.onMapLoaded(map));
-      map.on('error', () => this.markUnavailable());
+      const onLoad = () => this.onMapLoaded(map, generation);
+      map.on('load', onLoad);
+      this.mapCleanup.push(() => map.off('load', onLoad));
+
+      const canvas = map.getCanvas();
+      const onWebGlContextLost = () => this.markUnavailable(map, generation);
+      canvas.addEventListener('webglcontextlost', onWebGlContextLost);
+      this.mapCleanup.push(() => canvas.removeEventListener('webglcontextlost', onWebGlContextLost));
+      // MapLibre's error event also covers individual tiles, glyphs and sprites. Critical startup
+      // failures are bounded by MAP_LOAD_TIMEOUT_MS; resource errors alone must not disable the map.
     } catch {
       if (generation === this.mapGeneration && !this.destroyed) {
-        this.markUnavailable();
+        this.markUnavailable(undefined, generation);
       }
     }
   }
 
-  private onMapLoaded(map: MapLibreMap): void {
-    if (this.map !== map || this.mapUnavailable()) {
+  private onMapLoaded(map: MapLibreMap, generation: number): void {
+    if (!this.isCurrentMap(map, generation)) {
       return;
     }
     this.clearMapLoadTimeout();
@@ -164,16 +176,19 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
           'circle-stroke-width': ['case', ['get', 'selected'], 3, 1.5],
         },
       });
-      this.registerMapEvents(map);
+      this.registerMapEvents(map, generation);
       this.mapReady.set(true);
       this.moveToCity();
     } catch {
-      this.markUnavailable();
+      this.markUnavailable(map, generation);
     }
   }
 
-  private registerMapEvents(map: MapLibreMap): void {
-    map.on('click', CLUSTERS_LAYER_ID, (event: MapLayerMouseEvent) => {
+  private registerMapEvents(map: MapLibreMap, generation: number): void {
+    const onClusterClick = (event: MapLayerMouseEvent) => {
+      if (!this.isCurrentMap(map, generation)) {
+        return;
+      }
       const clusterId = event.features?.[0]?.properties?.['cluster_id'];
       const source = map.getSource(PLACES_SOURCE_ID) as GeoJSONSource | undefined;
       if (typeof clusterId !== 'number' || !source) {
@@ -181,21 +196,45 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       }
       void source
         .getClusterExpansionZoom(clusterId)
-        .then((zoom) => map.easeTo({ center: event.lngLat, zoom, duration: 350 }))
-        .catch(() => this.markUnavailable());
-    });
-    map.on('click', PLACE_POINTS_LAYER_ID, (event: MapLayerMouseEvent) => {
+        .then((zoom) => {
+          if (this.isCurrentMap(map, generation)) {
+            map.easeTo({ center: event.lngLat, zoom, duration: 350 });
+          }
+        })
+        .catch(() => undefined);
+    };
+    map.on('click', CLUSTERS_LAYER_ID, onClusterClick);
+    this.mapCleanup.push(() => map.off('click', CLUSTERS_LAYER_ID, onClusterClick));
+
+    const onPlaceClick = (event: MapLayerMouseEvent) => {
+      if (!this.isCurrentMap(map, generation)) {
+        return;
+      }
       const placeId = event.features?.[0]?.properties?.['placeId'];
       if (typeof placeId === 'string') {
         this.placeSelected.emit(placeId);
       }
-    });
-    map.on('mouseenter', PLACE_POINTS_LAYER_ID, () => {
+    };
+    map.on('click', PLACE_POINTS_LAYER_ID, onPlaceClick);
+    this.mapCleanup.push(() => map.off('click', PLACE_POINTS_LAYER_ID, onPlaceClick));
+
+    const onPlaceMouseEnter = () => {
+      if (!this.isCurrentMap(map, generation)) {
+        return;
+      }
       map.getCanvas().style.cursor = 'pointer';
-    });
-    map.on('mouseleave', PLACE_POINTS_LAYER_ID, () => {
+    };
+    map.on('mouseenter', PLACE_POINTS_LAYER_ID, onPlaceMouseEnter);
+    this.mapCleanup.push(() => map.off('mouseenter', PLACE_POINTS_LAYER_ID, onPlaceMouseEnter));
+
+    const onPlaceMouseLeave = () => {
+      if (!this.isCurrentMap(map, generation)) {
+        return;
+      }
       map.getCanvas().style.cursor = '';
-    });
+    };
+    map.on('mouseleave', PLACE_POINTS_LAYER_ID, onPlaceMouseLeave);
+    this.mapCleanup.push(() => map.off('mouseleave', PLACE_POINTS_LAYER_ID, onPlaceMouseLeave));
   }
 
   private moveToCity(): void {
@@ -238,18 +277,39 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     };
   }
 
-  private markUnavailable(): void {
+  private markUnavailable(map?: MapLibreMap, generation?: number): void {
+    if (this.destroyed || this.mapUnavailable()
+      || (generation !== undefined && generation !== this.mapGeneration)
+      || (map !== undefined && map !== this.map)) {
+      return;
+    }
     this.clearMapLoadTimeout();
     this.mapReady.set(false);
     this.mapUnavailable.set(true);
+    this.disposeMap();
+  }
+
+  private isCurrentMap(map: MapLibreMap, generation: number): boolean {
+    return !this.destroyed
+      && !this.mapUnavailable()
+      && this.map === map
+      && this.mapGeneration === generation;
   }
 
   private disposeMap(): void {
     this.mapGeneration += 1;
     this.clearMapLoadTimeout();
-    this.map?.remove();
+    const map = this.map;
     this.map = null;
     this.mapReady.set(false);
+    const cleanups = this.mapCleanup;
+    this.mapCleanup = [];
+    cleanups.forEach((cleanup) => cleanup());
+    try {
+      map?.remove();
+    } catch {
+      // A lost WebGL context may already have partially disposed the renderer.
+    }
   }
 
   private clearMapLoadTimeout(): void {

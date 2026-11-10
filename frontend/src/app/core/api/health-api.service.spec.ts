@@ -1,7 +1,7 @@
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { TestBed } from '@angular/core/testing';
-import { HealthApiService } from './health-api.service';
+import { HealthApiService, UnexpectedHealthResponseError } from './health-api.service';
 
 describe('HealthApiService', () => {
   let service: HealthApiService;
@@ -34,7 +34,7 @@ describe('HealthApiService', () => {
 
     httpTesting.expectOne('/api/health').flush({ status: 'DOWN', service: 'wrong-api' });
 
-    expect(error).toBeInstanceOf(Error);
+    expect(error).toBeInstanceOf(UnexpectedHealthResponseError);
     expect((error as Error).message).toBe('Health endpoint returned an unexpected response');
   });
 });

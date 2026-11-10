@@ -7,6 +7,13 @@ export type HealthResponse = Readonly<{
   service: 'hopon-api';
 }>;
 
+export class UnexpectedHealthResponseError extends Error {
+  constructor() {
+    super('Health endpoint returned an unexpected response');
+    this.name = 'UnexpectedHealthResponseError';
+  }
+}
+
 @Injectable({ providedIn: 'root' })
 export class HealthApiService {
   private readonly http = inject(HttpClient);
@@ -25,7 +32,7 @@ function toHealthResponse(payload: unknown): HealthResponse {
     !('service' in payload) ||
     payload.service !== 'hopon-api'
   ) {
-    throw new Error('Health endpoint returned an unexpected response');
+    throw new UnexpectedHealthResponseError();
   }
 
   return { status: 'UP', service: 'hopon-api' };

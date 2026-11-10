@@ -10,12 +10,15 @@
         class="api-status"
         [class.api-status--online]="apiState() === 'online'"
         [class.api-status--offline]="apiState() === 'offline'"
+        [class.api-status--unexpected]="apiState() === 'unexpected'"
         role="status"
         aria-live="polite"
+        aria-atomic="true"
       >
         <span class="api-status__dot" aria-hidden="true"></span>
-        <span>{{ apiStatusText() }}</span>
-        @if (apiState() === 'offline') {
+        <span class="api-status__text--desktop">{{ apiStatusText() }}</span>
+        <span class="api-status__text--compact">{{ compactApiStatusText() }}</span>
+        @if (apiState() === 'offline' || apiState() === 'unexpected') {
           <button class="api-status__retry" type="button" (click)="retryHealthCheck()">Retry</button>
         }
       </div>

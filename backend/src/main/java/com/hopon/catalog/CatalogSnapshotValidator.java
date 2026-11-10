@@ -35,12 +35,16 @@ public final class CatalogSnapshotValidator {
             "rotterdam", new CityBounds(51.84, 52.03, 4.25, 4.68),
             "utrecht", new CityBounds(52.00, 52.18, 4.95, 5.25));
     private static final Set<String> OSM_TYPES = Set.of("node", "way", "relation");
+    private static final double NEAR_DUPLICATE_DISTANCE_METERS = 30.0;
+    private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
     public void validate(CatalogSnapshot snapshot) {
         List<String> errors = new ArrayList<>();
+        Set<String> catalogIds = new HashSet<>();
+        Set<String> sourceIdentities = new HashSet<>();
         validateCities(snapshot.cities(), errors);
-        validatePlaces(snapshot.places(), snapshot.cities(), errors);
-        validateHubs(snapshot.hubs(), snapshot.cities(), errors);
+        validatePlaces(snapshot.places(), snapshot.cities(), catalogIds, sourceIdentities, errors);
+        validateHubs(snapshot.hubs(), snapshot.cities(), catalogIds, sourceIdentities, errors);
 
         if (!errors.isEmpty()) {
             throw new IllegalStateException("Invalid catalog snapshot: " + String.join("; ", errors));
@@ -81,19 +85,22 @@ public final class CatalogSnapshotValidator {
         }
     }
 
-    private static void validatePlaces(List<Place> places, List<City> cities, List<String> errors) {
+    private static void validatePlaces(
+            List<Place> places,
+            List<City> cities,
+            Set<String> catalogIds,
+            Set<String> sourceIdentities,
+            List<String> errors) {
         Set<String> supportedCities = cityIds(cities);
         Map<String, Integer> counts = new HashMap<>();
         Map<String, Integer> architectureCounts = new HashMap<>();
         Map<String, Integer> cultureCounts = new HashMap<>();
         Map<String, Integer> greenCounts = new HashMap<>();
-        Set<String> ids = new HashSet<>();
-        Set<String> sourceUrls = new HashSet<>();
-        Set<String> canonicalNames = new HashSet<>();
+        Map<NearDuplicateKey, List<Place>> nearDuplicateCandidates = new HashMap<>();
 
         for (Place place : places) {
-            if (isBlank(place.id()) || !ids.add(place.id())) {
-                errors.add("place IDs must be present and unique: " + place.id());
+            if (isBlank(place.id()) || !catalogIds.add(place.id())) {
+                errors.add("catalog record IDs must be present and unique: " + place.id());
             }
             if (!supportedCities.contains(place.cityId())) {
                 errors.add("place references an unsupported city: " + place.id());
@@ -101,8 +108,6 @@ public final class CatalogSnapshotValidator {
             }
             if (isBlank(place.name())) {
                 errors.add("place name is required for " + place.id());
-            } else if (!canonicalNames.add(place.cityId() + "|" + canonicalName(place.name()))) {
-                errors.add("duplicate canonical place name in " + place.cityId() + ": " + place.name());
             }
             if (!isValidPoint(place.latitude(), place.longitude())) {
                 errors.add("place coordinates are invalid for " + place.id());
@@ -129,8 +134,8 @@ public final class CatalogSnapshotValidator {
             }
             if (!isOsmSource(place.sourceUrl(), place.sourceType(), place.sourceOsmId())) {
                 errors.add("place source identity is invalid for " + place.id());
-            } else if (!sourceUrls.add(place.sourceUrl())) {
-                errors.add("duplicate OSM source object in places: " + place.sourceUrl());
+            } else if (!sourceIdentities.add(sourceIdentity(place.sourceType(), place.sourceOsmId()))) {
+                errors.add("duplicate canonical OSM source identity in catalog: " + place.sourceUrl());
             }
             if (place.sourceTags() == null || isBlank(place.sourceTags().get("name"))) {
                 errors.add("place source must retain its OSM name tag: " + place.id());
@@ -140,6 +145,7 @@ public final class CatalogSnapshotValidator {
                 errors.add("place address identifies a different city: " + place.id());
             }
             validateImageMetadata(place, errors);
+            validateNearDuplicate(place, nearDuplicateCandidates, errors);
         }
 
         for (String cityId : EXPECTED_CITY_IDS) {
@@ -161,15 +167,18 @@ public final class CatalogSnapshotValidator {
         }
     }
 
-    private static void validateHubs(List<MobilityHub> hubs, List<City> cities, List<String> errors) {
+    private static void validateHubs(
+            List<MobilityHub> hubs,
+            List<City> cities,
+            Set<String> catalogIds,
+            Set<String> sourceIdentities,
+            List<String> errors) {
         Set<String> supportedCities = cityIds(cities);
         Map<String, Integer> counts = new HashMap<>();
-        Set<String> ids = new HashSet<>();
-        Set<String> sourceUrls = new HashSet<>();
 
         for (MobilityHub hub : hubs) {
-            if (isBlank(hub.id()) || !ids.add(hub.id())) {
-                errors.add("hub IDs must be present and unique: " + hub.id());
+            if (isBlank(hub.id()) || !catalogIds.add(hub.id())) {
+                errors.add("catalog record IDs must be present and unique: " + hub.id());
             }
             if (!supportedCities.contains(hub.cityId())) {
                 errors.add("hub references an unsupported city: " + hub.id());
@@ -197,8 +206,8 @@ public final class CatalogSnapshotValidator {
             }
             if (!isOsmSource(hub.source(), hub.sourceType(), hub.sourceOsmId())) {
                 errors.add("hub source identity is invalid for " + hub.id());
-            } else if (!sourceUrls.add(hub.source())) {
-                errors.add("duplicate OSM source object in hubs: " + hub.source());
+            } else if (!sourceIdentities.add(sourceIdentity(hub.sourceType(), hub.sourceOsmId()))) {
+                errors.add("duplicate canonical OSM source identity in catalog: " + hub.source());
             }
             if (hub.sourceTags() == null || isBlank(hub.sourceTags().get("name"))) {
                 errors.add("hub source must retain its OSM name tag: " + hub.id());
@@ -213,6 +222,39 @@ public final class CatalogSnapshotValidator {
         if (!isOrdered(hubs, HUB_ORDER)) {
             errors.add("hubs must be ordered by city ID, normalized name, then ID");
         }
+    }
+
+    private static void validateNearDuplicate(
+            Place place,
+            Map<NearDuplicateKey, List<Place>> candidatesByIdentity,
+            List<String> errors) {
+        if (place.category() == null || isBlank(place.name()) || place.sourceTags() == null) {
+            return;
+        }
+        NearDuplicateKey key = new NearDuplicateKey(
+                place.cityId(),
+                place.category(),
+                canonicalName(place.name()));
+        List<Place> matchingRecords = candidatesByIdentity.computeIfAbsent(key, ignored -> new ArrayList<>());
+        for (Place matchingRecord : matchingRecords) {
+            if (distanceMeters(matchingRecord, place) <= NEAR_DUPLICATE_DISTANCE_METERS) {
+                errors.add("near-duplicate OSM representation within 30 m for "
+                        + matchingRecord.id() + " and " + place.id());
+                break;
+            }
+        }
+        matchingRecords.add(place);
+    }
+
+    private static double distanceMeters(Place first, Place second) {
+        double firstLatitude = Math.toRadians(first.latitude());
+        double secondLatitude = Math.toRadians(second.latitude());
+        double latitudeDelta = secondLatitude - firstLatitude;
+        double longitudeDelta = Math.toRadians(second.longitude() - first.longitude());
+        double haversine = Math.pow(Math.sin(latitudeDelta / 2.0), 2.0)
+                + Math.cos(firstLatitude) * Math.cos(secondLatitude)
+                * Math.pow(Math.sin(longitudeDelta / 2.0), 2.0);
+        return 2.0 * EARTH_RADIUS_METERS * Math.asin(Math.sqrt(Math.min(1.0, haversine)));
     }
 
     private static void validateHubModeSources(MobilityHub hub, List<String> errors) {
@@ -268,6 +310,10 @@ public final class CatalogSnapshotValidator {
         }
     }
 
+    private static String sourceIdentity(String sourceType, String sourceOsmId) {
+        return sourceType + "/" + sourceOsmId;
+    }
+
     private static boolean isValidPoint(double latitude, double longitude) {
         return Double.isFinite(latitude)
                 && Double.isFinite(longitude)
@@ -321,5 +367,8 @@ public final class CatalogSnapshotValidator {
     }
 
     private record CityBounds(double minLatitude, double maxLatitude, double minLongitude, double maxLongitude) {
+    }
+
+    private record NearDuplicateKey(String cityId, PlaceCategory category, String canonicalName) {
     }
 }

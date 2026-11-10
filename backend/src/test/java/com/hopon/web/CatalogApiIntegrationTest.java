@@ -104,13 +104,34 @@ class CatalogApiIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         PlaceDto[] places = objectMapper.readValue(result.getResponse().getContentAsByteArray(), PlaceDto[].class);
-        assertThat(places).hasSize(597).allSatisfy(place -> assertThat(place.cityId()).isEqualTo("utrecht"));
+        int expectedUtrechtCount = (int) snapshot.places().stream()
+                .filter(place -> place.cityId().equals("utrecht"))
+                .count();
+        assertThat(places).hasSize(expectedUtrechtCount)
+                .allSatisfy(place -> assertThat(place.cityId()).isEqualTo("utrecht"));
 
         mockMvc.perform(get("/api/places/{id}", target.id()))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.id").value(target.id()))
                 .andExpect(jsonPath("$.cityId").value("utrecht"))
                 .andExpect(jsonPath("$.category").value(target.category().name()));
+    }
+
+    @Test
+    void returnsEveryPlaceForLargeCityCatalogWithoutClippingResults() throws Exception {
+        List<String> expectedIds = snapshot.places().stream()
+                .filter(place -> place.cityId().equals("amsterdam"))
+                .map(Place::id)
+                .toList();
+
+        MvcResult result = mockMvc.perform(get("/api/places").param("cityId", "amsterdam"))
+                .andExpect(status().isOk())
+                .andReturn();
+        PlaceDto[] places = objectMapper.readValue(result.getResponse().getContentAsByteArray(), PlaceDto[].class);
+
+        assertThat(expectedIds).hasSizeGreaterThanOrEqualTo(25);
+        assertThat(places).hasSize(expectedIds.size());
+        assertThat(places).extracting(PlaceDto::id).containsExactlyInAnyOrderElementsOf(expectedIds);
     }
 
     @Test
@@ -121,7 +142,11 @@ class CatalogApiIntegrationTest {
                 .andReturn();
 
         MobilityHubDto[] hubs = objectMapper.readValue(result.getResponse().getContentAsByteArray(), MobilityHubDto[].class);
-        assertThat(hubs).hasSize(6).allSatisfy(hub -> assertThat(hub.cityId()).isEqualTo("rotterdam"));
+        int expectedRotterdamHubCount = (int) snapshot.hubs().stream()
+                .filter(hub -> hub.cityId().equals("rotterdam"))
+                .count();
+        assertThat(hubs).hasSize(expectedRotterdamHubCount)
+                .allSatisfy(hub -> assertThat(hub.cityId()).isEqualTo("rotterdam"));
         assertThat(result.getResponse().getContentAsString()).doesNotContain("sourceTags", "sourceOsmId");
     }
 

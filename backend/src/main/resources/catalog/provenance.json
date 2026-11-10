@@ -1,7 +1,7 @@
 {
     "generatedAt":  "2026-11-10",
     "dataset":  "HopOn Netherlands static city discovery catalog",
-    "attribution":  "Â© OpenStreetMap contributors",
+    "attribution":  "© OpenStreetMap contributors",
     "license":  "Open Database License (ODbL) 1.0",
     "licenseUrl":  "https://www.openstreetmap.org/copyright",
     "snapshotSource":  "One-time Overpass API extracts; no runtime network access",
@@ -24,7 +24,7 @@
                       }
                   ],
     "attributionRequired":  "Credit OpenStreetMap contributors and make the catalog data available under ODbL 1.0.",
-    "selection":  "All distinct named objects in the source snapshots matching the supported thematic OSM tags; duplicate representations are collapsed by Wikidata ID or same category, canonical name and location within 30 m. No POI count cap.",
+    "selection":  "All distinct named objects in the source snapshots matching supported thematic OSM tags. Canonical OSM type/ID is unique across places and hubs. Distinct place objects are near-duplicates only when they share a city, category and canonical name and lie within 30 m; name similarity without those matches never rejects or merges records. No POI or hub count cap.",
     "placeCounts":  {
                         "amsterdam":  1436,
                         "rotterdam":  674,

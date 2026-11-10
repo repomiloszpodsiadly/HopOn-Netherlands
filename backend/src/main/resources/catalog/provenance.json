@@ -1,0 +1,73 @@
+{
+    "generatedAt":  "2026-11-10",
+    "dataset":  "HopOn Netherlands static city discovery catalog",
+    "attribution":  "© OpenStreetMap contributors",
+    "license":  "Open Database License (ODbL) 1.0",
+    "licenseUrl":  "https://www.openstreetmap.org/copyright",
+    "snapshotSource":  "One-time Overpass API extracts; no runtime network access",
+    "overpassEndpoint":  "https://ovp.dresel.systems/api/interpreter",
+    "snapshots":  [
+                      {
+                          "cityId":  "amsterdam",
+                          "osmBaseTimestamp":  "2026-11-08T21:21:00Z",
+                          "elementCount":  1509
+                      },
+                      {
+                          "cityId":  "rotterdam",
+                          "osmBaseTimestamp":  "2026-11-08T21:21:00Z",
+                          "elementCount":  802
+                      },
+                      {
+                          "cityId":  "utrecht",
+                          "osmBaseTimestamp":  "2026-11-08T21:21:00Z",
+                          "elementCount":  646
+                      }
+                  ],
+    "attributionRequired":  "Credit OpenStreetMap contributors and make the catalog data available under ODbL 1.0.",
+    "selection":  "All distinct named objects in the source snapshots matching supported thematic OSM tags. Canonical OSM type/ID is unique across places and hubs. Distinct place objects are near-duplicates only when they share a city, category and canonical name and lie within 30 m; name similarity without those matches never rejects or merges records. No POI or hub count cap.",
+    "placeCounts":  {
+                        "amsterdam":  1436,
+                        "rotterdam":  674,
+                        "utrecht":  597
+                    },
+    "curatedHubCounts":  {
+                             "amsterdam":  6,
+                             "rotterdam":  6,
+                             "utrecht":  6
+                         },
+    "sourceTagFamilies":  [
+                              "tourism=museum|attraction|gallery|zoo|aquarium|artwork|viewpoint|theme_park",
+                              "amenity=theatre|arts_centre",
+                              "leisure=park|garden|nature_reserve",
+                              "historic=castle|monument|memorial|archaeological_site|church",
+                              "plus individually checked architectural landmarks"
+                          ],
+    "categoryMapping":  {
+                            "MUSEUMS":  "tourism=museum",
+                            "ARCHITECTURE":  "historic castle/church/monastery and named architectural building types",
+                            "CULTURE":  "amenity theatre/arts_centre and tourism gallery/artwork",
+                            "PARKS_NATURE":  "leisure park/garden/nature_reserve and tourism zoo/aquarium/theme_park",
+                            "LANDMARKS":  "tourism attraction/viewpoint and historic monument/memorial/archaeological_site/ship/bridge/windmill"
+                        },
+    "sourceUrlPattern":  "https://www.openstreetmap.org/{node|way|relation}/{osmId}",
+    "cityCenterSources":  [
+                              {
+                                  "cityId":  "amsterdam",
+                                  "sourceUrl":  "https://www.openstreetmap.org/node/268396336",
+                                  "latitude":  52.3730796,
+                                  "longitude":  4.8924534
+                              },
+                              {
+                                  "cityId":  "rotterdam",
+                                  "sourceUrl":  "https://www.openstreetmap.org/node/44410812",
+                                  "latitude":  51.9244424,
+                                  "longitude":  4.47775
+                              },
+                              {
+                                  "cityId":  "utrecht",
+                                  "sourceUrl":  "https://www.openstreetmap.org/node/235861650",
+                                  "latitude":  52.0907006,
+                                  "longitude":  5.1215634
+                              }
+                          ]
+}

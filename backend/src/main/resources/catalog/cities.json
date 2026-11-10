@@ -1,0 +1,44 @@
+[
+    {
+        "id":  "amsterdam",
+        "name":  "Amsterdam",
+        "center":  {
+                       "latitude":  52.3730796,
+                       "longitude":  4.8924534
+                   },
+        "defaultZoom":  12.2,
+        "sourceUrl":  "https://www.openstreetmap.org/node/268396336",
+        "sourceTags":  {
+                           "name":  "Amsterdam",
+                           "place":  "city"
+                       }
+    },
+    {
+        "id":  "rotterdam",
+        "name":  "Rotterdam",
+        "center":  {
+                       "latitude":  51.9244424,
+                       "longitude":  4.47775
+                   },
+        "defaultZoom":  12.2,
+        "sourceUrl":  "https://www.openstreetmap.org/node/44410812",
+        "sourceTags":  {
+                           "name":  "Rotterdam",
+                           "place":  "city"
+                       }
+    },
+    {
+        "id":  "utrecht",
+        "name":  "Utrecht",
+        "center":  {
+                       "latitude":  52.0907006,
+                       "longitude":  5.1215634
+                   },
+        "defaultZoom":  12.4,
+        "sourceUrl":  "https://www.openstreetmap.org/node/235861650",
+        "sourceTags":  {
+                           "name":  "Utrecht",
+                           "place":  "city"
+                       }
+    }
+]

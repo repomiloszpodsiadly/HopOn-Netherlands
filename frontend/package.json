@@ -8,7 +8,8 @@
     "build": "ng build --configuration production",
     "lint": "ng lint",
     "typecheck": "ng build --configuration development",
-    "test": "ng test --watch=false"
+    "test": "ng test --watch=false",
+    "test:e2e": "playwright test"
   },
   "engines": {
     "node": "^22.22.3 || ^24.15.0 || ^26.0.0"
@@ -21,6 +22,7 @@
     "@angular/core": "^22.2.0",
     "@angular/platform-browser": "^22.2.0",
     "@angular/router": "^22.2.0",
+    "maplibre-gl": "^6.17.0",
     "rxjs": "~7.8.0",
     "tslib": "^2.3.0"
   },
@@ -29,6 +31,7 @@
     "@angular/cli": "^22.2.6",
     "@angular/compiler-cli": "^22.2.0",
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4.1.12",
     "angular-eslint": "22.6.0",
     "eslint": "^10.12.0",

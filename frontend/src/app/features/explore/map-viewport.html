@@ -1,0 +1,29 @@
+<div class="map-viewport" [class.map-viewport--unavailable]="mapUnavailable()">
+  <div
+    #mapHost
+    class="map-viewport__canvas"
+    [class.map-viewport__canvas--hidden]="mapUnavailable()"
+    role="region"
+    tabindex="-1"
+    [attr.aria-label]="'Interactive map of ' + city.name"
+  ></div>
+
+  @if (!mapReady() && !mapUnavailable()) {
+    <div class="map-viewport__loading" role="status" aria-live="polite">
+      <span class="map-viewport__spinner" aria-hidden="true"></span>
+      <span>Loading the map for {{ city.name }}…</span>
+    </div>
+  }
+
+  @if (mapUnavailable()) {
+    <div class="map-viewport__fallback" role="status" aria-live="polite">
+      <span class="map-viewport__fallback-icon" aria-hidden="true">↗</span>
+      <h3>Map unavailable</h3>
+      <p>The city guide is still available. Check your connection or browse the place list.</p>
+      <div class="map-viewport__fallback-actions">
+        <button type="button" class="button button--primary" (click)="retry()">Retry map</button>
+        <button type="button" class="button button--secondary" (click)="browsePlaces.emit()">Browse places</button>
+      </div>
+    </div>
+  }
+</div>

@@ -1,0 +1,331 @@
+[
+    {
+        "id":  "amsterdam-node-4040491812",
+        "cityId":  "amsterdam",
+        "name":  "Amsterdam Amstel",
+        "latitude":  52.3464656,
+        "longitude":  4.9175567,
+        "modes":  [
+                      "METRO",
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/4040491812",
+        "sourceType":  "node",
+        "sourceOsmId":  "4040491812",
+        "sourceTags":  {
+                           "name":  "Amsterdam Amstel",
+                           "railway":  "station",
+                           "station":  "train;subway",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "amsterdam-node-4005961975",
+        "cityId":  "amsterdam",
+        "name":  "Amsterdam Bijlmer ArenA",
+        "latitude":  52.3122449,
+        "longitude":  4.9470883,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/4005961975",
+        "sourceType":  "node",
+        "sourceOsmId":  "4005961975",
+        "sourceTags":  {
+                           "name":  "Amsterdam Bijlmer ArenA",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "amsterdam-node-4290854847",
+        "cityId":  "amsterdam",
+        "name":  "Amsterdam Centraal",
+        "latitude":  52.378901,
+        "longitude":  4.9005805,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/4290854847",
+        "sourceType":  "node",
+        "sourceOsmId":  "4290854847",
+        "sourceTags":  {
+                           "name":  "Amsterdam Centraal",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "amsterdam-node-2827632045",
+        "cityId":  "amsterdam",
+        "name":  "Amsterdam Muiderpoort",
+        "latitude":  52.3607255,
+        "longitude":  4.9312484,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/2827632045",
+        "sourceType":  "node",
+        "sourceOsmId":  "2827632045",
+        "sourceTags":  {
+                           "name":  "Amsterdam Muiderpoort",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "amsterdam-node-3938547498",
+        "cityId":  "amsterdam",
+        "name":  "Amsterdam Sloterdijk",
+        "latitude":  52.3890317,
+        "longitude":  4.8381062,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/3938547498",
+        "sourceType":  "node",
+        "sourceOsmId":  "3938547498",
+        "sourceTags":  {
+                           "name":  "Amsterdam Sloterdijk",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "amsterdam-node-5252944882",
+        "cityId":  "amsterdam",
+        "name":  "Amsterdam Zuid",
+        "latitude":  52.3387214,
+        "longitude":  4.8713391,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/5252944882",
+        "sourceType":  "node",
+        "sourceOsmId":  "5252944882",
+        "sourceTags":  {
+                           "name":  "Amsterdam Zuid",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "rotterdam-node-4048801964",
+        "cityId":  "rotterdam",
+        "name":  "Rotterdam Alexander",
+        "latitude":  51.9517162,
+        "longitude":  4.5524827,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/4048801964",
+        "sourceType":  "node",
+        "sourceOsmId":  "4048801964",
+        "sourceTags":  {
+                           "name":  "Rotterdam Alexander",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "rotterdam-node-4048801966",
+        "cityId":  "rotterdam",
+        "name":  "Rotterdam Blaak",
+        "latitude":  51.9200723,
+        "longitude":  4.4890736,
+        "modes":  [
+                      "METRO",
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/4048801966",
+        "sourceType":  "node",
+        "sourceOsmId":  "4048801966",
+        "sourceTags":  {
+                           "name":  "Rotterdam Blaak",
+                           "railway":  "station",
+                           "station":  "train;subway",
+                           "public_transport":  "station",
+                           "amenity":  "station"
+                       }
+    },
+    {
+        "id":  "rotterdam-node-4048801967",
+        "cityId":  "rotterdam",
+        "name":  "Rotterdam Centraal",
+        "latitude":  51.9250574,
+        "longitude":  4.4692289,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/4048801967",
+        "sourceType":  "node",
+        "sourceOsmId":  "4048801967",
+        "sourceTags":  {
+                           "name":  "Rotterdam Centraal",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "rotterdam-node-7606556450",
+        "cityId":  "rotterdam",
+        "name":  "Rotterdam Lombardijen",
+        "latitude":  51.8803596,
+        "longitude":  4.5310527,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/7606556450",
+        "sourceType":  "node",
+        "sourceOsmId":  "7606556450",
+        "sourceTags":  {
+                           "name":  "Rotterdam Lombardijen",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "rotterdam-node-7606556448",
+        "cityId":  "rotterdam",
+        "name":  "Rotterdam Noord",
+        "latitude":  51.9422622,
+        "longitude":  4.4815812,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/7606556448",
+        "sourceType":  "node",
+        "sourceOsmId":  "7606556448",
+        "sourceTags":  {
+                           "name":  "Rotterdam Noord",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "rotterdam-node-7606556449",
+        "cityId":  "rotterdam",
+        "name":  "Rotterdam Zuid",
+        "latitude":  51.9049018,
+        "longitude":  4.5098521,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/7606556449",
+        "sourceType":  "node",
+        "sourceOsmId":  "7606556449",
+        "sourceTags":  {
+                           "name":  "Rotterdam Zuid",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "utrecht-node-45198301",
+        "cityId":  "utrecht",
+        "name":  "Utrecht Centraal",
+        "latitude":  52.0893925,
+        "longitude":  5.109821,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/45198301",
+        "sourceType":  "node",
+        "sourceOsmId":  "45198301",
+        "sourceTags":  {
+                           "name":  "Utrecht Centraal",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "utrecht-node-45095869",
+        "cityId":  "utrecht",
+        "name":  "Utrecht Lunetten",
+        "latitude":  52.0664082,
+        "longitude":  5.1432619,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/45095869",
+        "sourceType":  "node",
+        "sourceOsmId":  "45095869",
+        "sourceTags":  {
+                           "name":  "Utrecht Lunetten",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "utrecht-node-7606645163",
+        "cityId":  "utrecht",
+        "name":  "Utrecht Overvecht",
+        "latitude":  52.1101212,
+        "longitude":  5.1257618,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/7606645163",
+        "sourceType":  "node",
+        "sourceOsmId":  "7606645163",
+        "sourceTags":  {
+                           "name":  "Utrecht Overvecht",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "utrecht-node-45243362",
+        "cityId":  "utrecht",
+        "name":  "Utrecht Terwijde",
+        "latitude":  52.1002155,
+        "longitude":  5.0435521,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/45243362",
+        "sourceType":  "node",
+        "sourceOsmId":  "45243362",
+        "sourceTags":  {
+                           "name":  "Utrecht Terwijde",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "utrecht-node-1233812055",
+        "cityId":  "utrecht",
+        "name":  "Utrecht Vaartsche Rijn",
+        "latitude":  52.0787573,
+        "longitude":  5.1218783,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/1233812055",
+        "sourceType":  "node",
+        "sourceOsmId":  "1233812055",
+        "sourceTags":  {
+                           "name":  "Utrecht Vaartsche Rijn",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    },
+    {
+        "id":  "utrecht-node-3105151948",
+        "cityId":  "utrecht",
+        "name":  "Utrecht Zuilen",
+        "latitude":  52.1032324,
+        "longitude":  5.0893544,
+        "modes":  [
+                      "TRAIN"
+                  ],
+        "source":  "https://www.openstreetmap.org/node/3105151948",
+        "sourceType":  "node",
+        "sourceOsmId":  "3105151948",
+        "sourceTags":  {
+                           "name":  "Utrecht Zuilen",
+                           "railway":  "station",
+                           "public_transport":  "station"
+                       }
+    }
+]

@@ -1,0 +1,178 @@
+<div class="plans-shell plan-details-shell">
+  <header class="plans-topbar">
+    <a class="plans-brand" routerLink="/" aria-label="HopOn Netherlands home">
+      <span class="brand__symbol" aria-hidden="true"><span></span></span>
+      <span class="brand__wordmark">hopon<span>.</span></span>
+    </a>
+    <a class="details-topbar-link" routerLink="/plans">Saved Plans</a>
+  </header>
+
+  <main class="plan-details-main" aria-labelledby="plan-details-title">
+    @if (loading()) {
+      <p class="plans-state" role="status">Loading this saved plan…</p>
+    } @else if (missing() && plan() === null) {
+      <section class="plans-state plans-state--error" role="alert">
+        <p class="plans-eyebrow">PLAN NO LONGER AVAILABLE</p>
+        <h1>This plan could not be found.</h1>
+        <p>It may have been deleted or the backend may have restarted.</p>
+        <a class="plans-button plans-button--primary" routerLink="/plans">Back to Saved Plans</a>
+      </section>
+    } @else if (loadError(); as message) {
+      <section class="plans-state plans-state--error" role="alert">
+        <p class="plans-eyebrow">SAVED PLAN</p>
+        <h1>This plan could not be loaded.</h1>
+        <p>{{ message }}</p>
+        <a class="plans-button plans-button--primary" routerLink="/plans">Back to Saved Plans</a>
+      </section>
+    } @else if (plan(); as savedPlan) {
+      <header class="plan-details-heading">
+        <div>
+          <p class="plans-eyebrow">{{ cityName(savedPlan.cityId) }} · SAVED CITY DAY</p>
+          <h1 id="plan-details-title">{{ name() || 'Untitled plan' }}</h1>
+          <p class="plans-intro">Review your saved stops and make a day that feels like yours.</p>
+        </div>
+        <div class="plan-details-heading__actions">
+          <a class="plans-button plans-button--secondary" routerLink="/plans">Saved Plans</a>
+          <button class="plans-button plans-button--danger" type="button" [disabled]="saving() || deleting() || missing()" (click)="openDeleteDialog()">Delete plan</button>
+        </div>
+      </header>
+
+      @if (missing()) {
+        <div class="details-alert" role="alert">
+          <p>{{ saveError() }}</p>
+          <a routerLink="/plans">Back to Saved Plans</a>
+        </div>
+      }
+      @if (navigationMessage(); as message) {
+        <p class="details-alert" role="status">{{ message }}</p>
+      }
+      @if (catalogLoading()) {
+        <p class="details-inline-state" role="status">Loading place details…</p>
+      } @else if (catalogError(); as message) {
+        <div class="details-catalog-warning" role="status">
+          <p>{{ message }} Saved plan details remain available by place ID.</p>
+          <button class="details-text-button" type="button" (click)="retryCatalog()">Retry place details</button>
+        </div>
+      }
+
+      <section class="plan-details-meta" aria-label="Saved plan dates">
+        <div><span>Created</span><time [attr.datetime]="savedPlan.createdAt">{{ formatDate(savedPlan.createdAt) }}</time></div>
+        <div><span>Last updated</span><time [attr.datetime]="savedPlan.updatedAt">{{ formatDate(savedPlan.updatedAt) }}</time></div>
+      </section>
+
+      <form class="plan-details-form" (submit)="$event.preventDefault(); save()" aria-label="Edit saved plan">
+        <label class="details-field" for="saved-plan-name">
+          <span>Plan name</span>
+          <input
+            id="saved-plan-name"
+            type="text"
+            maxlength="80"
+            autocomplete="off"
+            [value]="name()"
+            [disabled]="saving() || deleting() || missing()"
+            (input)="onNameInput($event)"
+            aria-describedby="saved-plan-name-help"
+          />
+          <small id="saved-plan-name-help">Up to 80 characters. Changes are saved to the backend when you choose Save changes.</small>
+        </label>
+
+        <section class="details-stops" aria-labelledby="saved-plan-stops-title">
+          <div class="details-section-heading">
+            <div>
+              <p class="plans-eyebrow">YOUR ROUTE, YOUR ORDER</p>
+              <h2 id="saved-plan-stops-title">Stops in {{ cityName(savedPlan.cityId) }}</h2>
+            </div>
+            <span>{{ placeIds().length }} / 12</span>
+          </div>
+
+          <ol class="details-stop-list">
+            @for (row of placeRows(); track row.id; let index = $index) {
+              <li class="details-stop">
+                <span class="details-stop__number" aria-hidden="true">{{ index + 1 }}</span>
+                <div class="details-stop__copy">
+                  @if (row.place; as place) {
+                    <span class="details-stop__category">{{ place.category.replace('_', ' ') }}</span>
+                    <h3>{{ place.name }}</h3>
+                    <p>{{ place.shortDescription }}</p>
+                  } @else {
+                    <span class="details-stop__category">CATALOG PLACE</span>
+                    <h3>Place details are unavailable</h3>
+                    <p>Reference: <code>{{ row.id }}</code>. You can remove this stop from the saved plan.</p>
+                  }
+                </div>
+                <div class="details-stop__actions" [attr.aria-label]="'Actions for ' + (row.place?.name ?? row.id)">
+                  <button class="details-icon-button" type="button" [disabled]="index === 0 || saving() || deleting() || missing()" [attr.aria-label]="'Move ' + (row.place?.name ?? row.id) + ' up'" (click)="movePlace(row.id, 'up')">↑</button>
+                  <button class="details-icon-button" type="button" [disabled]="index === placeIds().length - 1 || saving() || deleting() || missing()" [attr.aria-label]="'Move ' + (row.place?.name ?? row.id) + ' down'" (click)="movePlace(row.id, 'down')">↓</button>
+                  <button class="details-remove-button" type="button" [disabled]="saving() || deleting() || missing()" [attr.aria-label]="'Remove ' + (row.place?.name ?? row.id)" (click)="removePlace(row.id)">Remove</button>
+                </div>
+              </li>
+            }
+          </ol>
+        </section>
+
+        <section class="details-add-stop" aria-labelledby="add-saved-stop-title">
+          <div>
+            <p class="plans-eyebrow">MAKE IT YOURS</p>
+            <h2 id="add-saved-stop-title">Add another place</h2>
+          </div>
+          <label class="details-field" for="add-saved-stop">
+            <span>Choose a {{ cityName(savedPlan.cityId) }} place</span>
+            <select id="add-saved-stop" [value]="selectedPlaceId()" [disabled]="saving() || deleting() || missing() || availablePlaces().length === 0" (change)="onPlaceSelected($event)">
+              <option value="">{{ placeIds().length >= 12 ? 'Plan has reached the 12 place limit' : catalogLoading() ? 'Loading places…' : 'Choose a place' }}</option>
+              @for (place of availablePlaces(); track place.id) {
+                <option [value]="place.id">{{ place.name }} · {{ place.category.replace('_', ' ') }}</option>
+              }
+            </select>
+          </label>
+          <button class="plans-button plans-button--secondary" type="button" [disabled]="selectedPlaceId().length === 0 || saving() || deleting() || missing()" (click)="addSelectedPlace()">Add place</button>
+        </section>
+
+        @if (validationMessages().length > 0) {
+          <ul class="details-validation" aria-label="Plan validation">
+            @for (message of validationMessages(); track message) {
+              <li>{{ message }}</li>
+            }
+          </ul>
+        }
+        @if (saveError(); as message) {
+          <div class="details-alert" role="alert"><p>{{ message }}</p></div>
+        }
+        @if (saveNotice(); as message) {
+          <p class="details-success" role="status">{{ message }}</p>
+        }
+
+        <div class="details-form-actions">
+          <button class="plans-button plans-button--primary" type="submit" [disabled]="!canSave()">{{ saving() ? 'Saving…' : 'Save changes' }}</button>
+          <a class="details-cancel-link" routerLink="/plans">Back to Saved Plans</a>
+          @if (dirty()) {
+            <span class="details-unsaved-note" role="status">Unsaved edits</span>
+          }
+        </div>
+      </form>
+    }
+  </main>
+
+  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Saved plan edits are separate from your current tab draft.</span></footer>
+  <app-main-navigation [cityId]="plan()?.cityId ?? 'amsterdam'" />
+
+  <app-confirm-dialog
+    #deleteDialog
+    dialogId="delete-plan-confirmation"
+    title="Delete this saved plan?"
+    description="This removes the plan from the running backend. This action cannot be undone."
+    confirmLabel="Delete plan"
+    [busy]="deleting()"
+    [message]="deleteMessage()"
+    (confirmed)="confirmDelete()"
+  />
+  <app-confirm-dialog
+    #discardDialog
+    dialogId="discard-plan-edits"
+    title="Leave without saving?"
+    description="Your edits to this saved plan have not been sent to the backend."
+    confirmLabel="Discard edits"
+    cancelLabel="Keep editing"
+    (confirmed)="confirmDiscardEdits()"
+    (cancelled)="keepEditing()"
+  />
+</div>

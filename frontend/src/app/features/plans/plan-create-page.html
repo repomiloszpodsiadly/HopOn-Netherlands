@@ -1,0 +1,167 @@
+<div class="plan-editor-shell">
+  <header class="plans-topbar">
+    <a class="plans-brand" routerLink="/" aria-label="HopOn Netherlands home">
+      <span class="brand__symbol" aria-hidden="true"><span></span></span>
+      <span class="brand__wordmark">hopon<span>.</span></span>
+    </a>
+    <a class="editor-back" routerLink="/plans">Plans</a>
+  </header>
+
+  <main class="plan-editor-main">
+    <p class="plans-eyebrow">A DAY, YOUR WAY</p>
+    <h1>Make a little<br /><em>room for wonder.</em></h1>
+    <p class="plans-intro">Shape a thoughtful day from real places in {{ cityName(currentCityId()) }}.</p>
+
+    @if (navigationMessage(); as message) {
+      <p class="editor-notice" role="status" aria-live="polite">{{ message }}</p>
+    }
+
+    @if (draftStore.storageUnavailable()) {
+      <p class="editor-notice editor-notice--warning" role="status">Tab storage is unavailable. Your unsaved draft may not survive a refresh.</p>
+    }
+    @if (draftStore.restoreMessage(); as restoreMessage) {
+      <p class="editor-notice editor-notice--warning" role="status">{{ restoreMessage }}</p>
+    }
+    @if (draftStore.isValidating()) {
+      <p class="editor-notice" role="status">Checking this tab&#8217;s draft against the current catalog…</p>
+    }
+    @if (draftStore.validationError(); as validationError) {
+      <div class="editor-state editor-state--error" role="alert">
+        <p>{{ validationError }}</p>
+        <button class="editor-button editor-button--quiet" type="button" [disabled]="saving()" (click)="retryCatalog()">Retry catalog check</button>
+      </div>
+    }
+
+    @if (catalogLoading()) {
+      <p class="editor-notice" role="status">Loading the {{ cityName(currentCityId()) }} place catalog…</p>
+    } @else if (catalogError(); as error) {
+      <div class="editor-state editor-state--error" role="alert">
+        <h2>Places could not be loaded</h2>
+        <p>{{ error }}</p>
+        <button class="editor-button editor-button--quiet" type="button" [disabled]="saving()" (click)="retryCatalog()">Retry</button>
+      </div>
+    }
+
+    @if (draftStore.draft(); as draft) {
+      <form class="plan-editor-form" (submit)="$event.preventDefault(); save()" aria-labelledby="plan-editor-title">
+        <h2 id="plan-editor-title" class="visually-hidden">Edit your tab draft</h2>
+
+        <label class="editor-field" for="plan-name">
+          <span>Give your day a name</span>
+          <input
+            id="plan-name"
+            type="text"
+            maxlength="80"
+            autocomplete="off"
+            [value]="draft.name"
+            [disabled]="saving()"
+            (input)="onNameInput($event)"
+            aria-describedby="plan-name-help"
+          />
+          <small id="plan-name-help">Up to 80 characters. This is a tab draft until you save it.</small>
+        </label>
+
+        <label class="editor-field" for="plan-city">
+          <span>City</span>
+          <select id="plan-city" [value]="currentCityId()" [disabled]="saving() || draftStore.cityConflict() !== null || draftStore.isValidating()" (change)="onCitySelected($event)">
+            @for (cityId of cityIds; track cityId) {
+              <option [value]="cityId">{{ cityName(cityId) }}</option>
+            }
+          </select>
+        </label>
+
+        @if (draftStore.cityConflict(); as conflict) {
+          <section class="editor-conflict" role="dialog" aria-modal="true" aria-labelledby="plan-city-conflict-title">
+            <h2 id="plan-city-conflict-title">Keep the existing draft?</h2>
+            <p>This tab has a {{ cityName(draft.cityId) }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?</p>
+            <div class="editor-actions">
+              <button class="editor-button editor-button--quiet" type="button" [disabled]="saving()" (click)="keepExistingDraft()">Keep existing</button>
+              <button class="editor-button editor-button--primary" type="button" [disabled]="saving()" (click)="replaceDraftWithRequestedCity()">Start new for {{ conflict.cityName }}</button>
+            </div>
+          </section>
+        }
+
+        <section class="editor-places" aria-labelledby="plan-places-title">
+          <div class="editor-section-heading">
+            <div>
+              <p class="plans-eyebrow">YOUR STOPS</p>
+              <h2 id="plan-places-title">Places in order</h2>
+            </div>
+            <span>{{ draft.placeIds.length }} / 12</span>
+          </div>
+
+          @if (draft.placeIds.length > 12) {
+            <p class="editor-notice editor-notice--warning" role="alert">This draft has more than 12 places. Nothing was removed; remove stops here to bring it within the save limit.</p>
+          }
+          @if (draft.placeIds.length === 0) {
+            <div class="editor-empty">
+              <h3>Your day starts with one place.</h3>
+              <p>Add places from Explore, or choose one of the city&#8217;s Discover picks.</p>
+              <a class="editor-button editor-button--quiet" [routerLink]="['/']" [queryParams]="{ city: draft.cityId }">Explore {{ cityName(draft.cityId) }}</a>
+            </div>
+          } @else {
+            <ol class="editor-place-list">
+              @for (row of draftPlaceRows(); track row.id; let index = $index) {
+                <li class="editor-place">
+                  <span class="editor-place__number" aria-hidden="true">{{ index + 1 }}</span>
+                  <div class="editor-place__details">
+                    @if (row.place; as place) {
+                      <span class="editor-place__category">{{ place.category.replace('_', ' ') }}</span>
+                      <h3>{{ place.name }}</h3>
+                      <p>{{ place.shortDescription }}</p>
+                    } @else {
+                      <span class="editor-place__category">CATALOG PLACE</span>
+                      <h3>This place is no longer available</h3>
+                      <p>Remove it before saving this plan.</p>
+                    }
+                  </div>
+                  <div class="editor-place__actions" [attr.aria-label]="'Reorder ' + (row.place?.name ?? 'unavailable place')">
+                    <button class="editor-icon-button" type="button" [disabled]="saving() || index === 0" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' up'" (click)="movePlace(row.id, 'up')">↑</button>
+                    <button class="editor-icon-button" type="button" [disabled]="saving() || index === draft.placeIds.length - 1" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' down'" (click)="movePlace(row.id, 'down')">↓</button>
+                    <button class="editor-remove" type="button" [disabled]="saving()" [attr.aria-label]="'Remove ' + (row.place?.name ?? 'unavailable place')" (click)="removePlace(row.id)">Remove</button>
+                  </div>
+                </li>
+              }
+            </ol>
+          }
+        </section>
+
+        @if (validationMessages().length > 0 && !catalogLoading() && catalogError() === null) {
+          <ul class="editor-validation" aria-label="Plan validation">
+            @for (message of validationMessages(); track message) {
+              <li>{{ message }}</li>
+            }
+          </ul>
+        }
+
+        @if (createError(); as error) {
+          <div class="editor-state editor-state--error" role="alert">
+            <p>{{ error }}</p>
+            @if (unknownOutcome()) {
+              <a class="editor-inline-link" routerLink="/plans">Review Saved Plans before retrying</a>
+            }
+          </div>
+        }
+
+        @if (createSuccess(); as message) {
+          <div class="editor-notice" role="status" aria-live="polite">
+            <p>{{ message }}</p>
+            @if (savedPlanId(); as planId) {
+              <a class="editor-inline-link" [routerLink]="['/plans', planId]">Open the saved plan</a>
+            }
+          </div>
+        }
+
+        <div class="editor-actions editor-actions--submit">
+          <button class="editor-button editor-button--primary" type="submit" [disabled]="!canSave()">
+            {{ saving() ? 'Saving…' : 'Save plan' }}
+          </button>
+          <a class="editor-cancel" routerLink="/">Keep exploring</a>
+        </div>
+      </form>
+    }
+  </main>
+
+  <footer class="plans-footer"><span>HopOn Netherlands</span><span>A tab draft becomes a saved plan only after the backend confirms it.</span></footer>
+  <app-main-navigation [cityId]="requestedCityId()" />
+</div>

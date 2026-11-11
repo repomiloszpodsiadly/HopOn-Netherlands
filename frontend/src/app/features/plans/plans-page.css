@@ -1,0 +1,76 @@
+:host { display: block; min-width: 0; }
+.plans-shell { min-height: 100vh; padding: 0 32px 24px; }
+.plans-topbar { display: flex; align-items: center; justify-content: space-between; height: 72px; border-bottom: 1px solid var(--color-border); }
+.plans-brand { display: inline-flex; align-items: center; gap: 10px; color: var(--color-ink); text-decoration: none; }
+.brand__symbol { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 10px 10px 10px 3px; background: var(--color-primary); transform: rotate(-7deg); }
+.brand__symbol span { position: relative; width: 10px; height: 10px; border: 2px solid #fff; border-radius: 50%; }
+.brand__symbol span::after { position: absolute; inset: 1px; width: 4px; height: 4px; border-radius: 50%; background: #fff; content: ''; }
+.brand__wordmark { font-size: 22px; font-weight: 750; letter-spacing: -1.2px; }
+.brand__wordmark span { color: var(--color-primary); }
+.plans-topbar__note { color: var(--color-muted); font-size: 12px; }
+.plans-main { display: grid; justify-items: start; gap: 14px; width: min(100%, 760px); min-height: min(68vh, 720px); align-content: center; margin: 0 auto; padding: 54px 0 70px; }
+.plans-eyebrow { margin: 0; color: var(--color-secondary); font-size: 11px; font-weight: 750; letter-spacing: 1.5px; }
+.plans-main h1 { margin: 0; font: 400 clamp(40px, 7vw, 68px)/.98 Georgia, 'Times New Roman', serif; letter-spacing: -2px; }
+.plans-main h1 em { color: var(--color-primary); font-weight: 400; }
+.plans-intro { max-width: 520px; margin: 0; color: var(--color-muted); font-size: 15px; line-height: 1.65; }
+.plans-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.plans-button { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 20px; border: 1px solid transparent; border-radius: 999px; text-decoration: none; font-size: 13px; font-weight: 700; }
+.plans-button--primary { background: var(--color-ink); color: #fff; }
+.plans-button--secondary { border-color: var(--color-border); background: #fff; color: var(--color-ink); }
+.plans-back-link { color: var(--color-secondary); font-size: 13px; font-weight: 650; }
+.plans-saved-id { margin-top: 12px; color: #98a09d; font-size: 10px; overflow-wrap: anywhere; }
+.plans-draft-card { display: grid; gap: 9px; width: min(100%, 460px); margin-top: 12px; padding: 20px; border: 1px solid var(--color-border); border-radius: var(--radius-card); background: var(--color-surface); box-shadow: var(--shadow-card); }
+.plans-draft-card > span { color: var(--color-secondary); font-size: 12px; font-weight: 750; letter-spacing: 1px; text-transform: uppercase; }
+.plans-draft-card h2 { margin: 0; font: 400 23px Georgia, serif; }
+.plans-draft-card p { margin: 0 0 5px; color: var(--color-muted); font-size: 12px; }
+.plans-footer { display: flex; justify-content: space-between; gap: 12px; width: min(100%, 1500px); margin: 0 auto; padding-top: 12px; border-top: 1px solid var(--color-border); color: #8b9491; font-size: 10px; }
+.plans-footer span:first-child { color: #626d6b; font-weight: 650; }
+
+.plans-list-shell { padding-bottom: 34px; }
+.plans-list-main { display: block; width: min(100%, 1120px); min-height: auto; padding: clamp(38px, 7vw, 76px) 0 76px; }
+.plans-list-heading { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 34px; }
+.plans-list-heading h1 { margin: 9px 0 12px; }
+.plans-list-heading .plans-intro { max-width: 560px; }
+.plans-state { display: grid; justify-items: start; gap: 13px; padding: clamp(24px, 5vw, 42px); border: 1px solid var(--color-border); border-radius: 24px; background: var(--color-surface); color: var(--color-muted); }
+.plans-state h2 { margin: 0; color: var(--color-ink); font: 400 26px Georgia, 'Times New Roman', serif; }
+.plans-state p { margin: 0; line-height: 1.55; }
+.plans-state--error { border-color: rgb(163 62 50 / 28%); }
+.plans-empty { display: grid; justify-items: start; gap: 12px; padding: clamp(25px, 6vw, 54px); border: 1px solid var(--color-border); border-radius: 26px; background: linear-gradient(135deg, #f8f7ef, #fff 70%); }
+.plans-empty__mark { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 15px; background: #f1e9d7; color: var(--color-secondary); font-size: 22px; }
+.plans-empty h2 { margin: 0; font: 400 clamp(26px, 5vw, 36px) Georgia, 'Times New Roman', serif; }
+.plans-empty p { margin: 0 0 7px; color: var(--color-muted); font-size: 14px; line-height: 1.55; }
+.saved-plan-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px; margin: 0; padding: 0; list-style: none; }
+.saved-plan-card { display: grid; gap: 15px; min-width: 0; height: 100%; padding: clamp(18px, 3vw, 25px); border: 1px solid var(--color-border); border-radius: 23px; background: var(--color-surface); box-shadow: var(--shadow-card); }
+.saved-plan-card__open { display: grid; justify-items: start; gap: 8px; color: inherit; text-decoration: none; }
+.saved-plan-card__open:focus-visible { border-radius: 8px; outline: 3px solid var(--color-secondary); outline-offset: 5px; }
+.saved-plan-card__city { color: var(--color-secondary); font-size: 12px; font-weight: 750; letter-spacing: .8px; text-transform: uppercase; }
+.saved-plan-card__open h2 { margin: 0; overflow-wrap: anywhere; font: 400 clamp(23px, 3.5vw, 31px)/1.08 Georgia, 'Times New Roman', serif; }
+.saved-plan-card__count { color: var(--color-muted); font-size: 12px; }
+.saved-plan-card__dates { display: grid; gap: 8px; margin: 0; padding-top: 13px; border-top: 1px solid var(--color-border); }
+.saved-plan-card__dates div { display: flex; justify-content: space-between; gap: 12px; }
+.saved-plan-card__dates dt { color: var(--color-muted); font-size: 12px; }
+.saved-plan-card__dates dd { margin: 0; color: var(--color-ink); font-size: 12px; text-align: right; }
+.saved-plan-card__dates time { font-variant-numeric: tabular-nums; }
+
+@media (max-width: 760px) {
+  .plans-shell { padding: 0 20px calc(96px + env(safe-area-inset-bottom)); }
+  .plans-topbar { height: 64px; }
+  .plans-main { min-height: 70vh; padding-top: 32px; }
+  .plans-main h1 { font-size: clamp(40px, 11vw, 58px); }
+  .plans-footer { flex-direction: column; }
+  .plans-list-main { padding-bottom: 44px; }
+  .plans-list-heading { align-items: stretch; flex-direction: column; }
+  .plans-list-heading > .plans-button { width: fit-content; }
+}
+
+@media (max-width: 390px) {
+  .plans-shell { padding-inline: 15px; }
+  .plans-topbar__note { font-size: 10px; }
+  .plans-main h1 { font-size: 41px; }
+  .plans-actions { width: 100%; }
+  .plans-button { width: 100%; }
+  .saved-plan-list { grid-template-columns: minmax(0, 1fr); }
+  .plans-list-heading > .plans-button { width: 100%; }
+  .saved-plan-card__dates div { align-items: start; flex-direction: column; gap: 3px; }
+  .saved-plan-card__dates dd { text-align: left; }
+}

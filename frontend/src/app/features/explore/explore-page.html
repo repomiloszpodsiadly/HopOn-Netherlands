@@ -337,18 +337,5 @@
     <span>Browse independently; map availability depends on your connection.</span>
   </footer>
 
-  <nav class="bottom-nav" aria-label="Main navigation">
-    <a class="bottom-nav__item bottom-nav__item--active" href="#top" aria-current="page">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
-      <span>Explore</span>
-    </a>
-    <a class="bottom-nav__item" href="#map-region">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg>
-      <span>Map</span>
-    </a>
-    <button class="bottom-nav__item" type="button" disabled aria-label="Plans will be available in a later phase">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 4.5h10a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2v-11a2 2 0 0 1 2-2Z" stroke="currentColor" stroke-width="1.6"/><path d="M5 17.5a2 2 0 0 1 2-2h12M9 9h6M9 12h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
-      <span>Plans</span>
-    </button>
-  </nav>
+  <app-main-navigation [cityId]="selectedCityId()" />
 </div>

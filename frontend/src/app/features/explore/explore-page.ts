@@ -44,6 +44,7 @@ import {
   PlaceDto,
   isCityId,
 } from '../../core/models/catalog.models';
+import { MainNavigationComponent } from '../shared/main-navigation';
 import { MapViewportComponent } from './map-viewport';
 import { NearbyHub, nearbyHubsForPlace } from './nearby-hubs';
 import { AddPlaceEvent, PlaceDetailComponent } from './place-detail';
@@ -81,7 +82,7 @@ export function resolveCityId(value: string | null): CityId {
 
 @Component({
   selector: 'app-explore-page',
-  imports: [MapViewportComponent, PlaceDetailComponent],
+  imports: [MapViewportComponent, PlaceDetailComponent, MainNavigationComponent],
   templateUrl: './explore-page.html',
   styleUrl: './explore-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

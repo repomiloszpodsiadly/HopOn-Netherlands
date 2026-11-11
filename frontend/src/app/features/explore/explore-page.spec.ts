@@ -141,6 +141,39 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelector('#city-select')).toBeTruthy();
   });
 
+  it.each(['rotterdam', 'utrecht'] as const)(
+    'keeps %s selected and focuses the map on first and repeated Map navigation',
+    async (cityId) => {
+      const { harness, http } = await startPage(`/?city=${cityId}`);
+      placesRequest(http, cityId).flush([]);
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+
+      const target = harness.routeNativeElement?.querySelector<HTMLElement>('#map-region');
+      const mapLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
+        '.bottom-nav__item[href$="#map-region"]',
+      );
+      expect(target).not.toBeNull();
+      expect(mapLink).not.toBeNull();
+      const scrollIntoView = vi.fn();
+      Object.defineProperty(target, 'scrollIntoView', { value: scrollIntoView, configurable: true });
+
+      mapLink!.click();
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+
+      expect(TestBed.inject(Router).url).toBe(`/?city=${cityId}#map-region`);
+      expect(document.activeElement).toBe(target);
+      expect(scrollIntoView).toHaveBeenCalledOnce();
+
+      mapLink!.click();
+      await harness.fixture.whenStable();
+      expect(TestBed.inject(Router).url).toBe(`/?city=${cityId}#map-region`);
+      expect(document.activeElement).toBe(target);
+      expect(scrollIntoView).toHaveBeenCalledTimes(2);
+    },
+  );
+
   it('loads a directly requested city and changes city through the accessible selector', async () => {
     const { harness, http, component } = await startPage('/?city=rotterdam');
     const rotterdamRequest = placesRequest(http, 'rotterdam');

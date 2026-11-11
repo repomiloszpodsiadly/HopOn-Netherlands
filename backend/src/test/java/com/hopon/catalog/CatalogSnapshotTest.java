@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.WebApplicationType;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.core.io.ResourceLoader;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
@@ -254,9 +255,11 @@ class CatalogSnapshotTest {
                 objectMapper,
                 resourceLoader,
                 validator,
+                new CatalogProvenanceValidator(),
                 "classpath:catalog/cities.json",
                 "classpath:catalog/invalid/places-malformed.json",
-                "classpath:catalog/stops.json"))
+                "classpath:catalog/stops.json",
+                "classpath:catalog/provenance.json"))
                 .isInstanceOf(RuntimeException.class);
     }
 
@@ -310,6 +313,33 @@ class CatalogSnapshotTest {
                     assertThat(rootCause)
                             .isInstanceOf(IllegalStateException.class)
                             .hasMessageContaining("must contain at least 25 places");
+                });
+    }
+
+    @Test
+    void applicationStartsWithValidProvenanceManifest() {
+        try (ConfigurableApplicationContext context = new SpringApplicationBuilder(HopOnApplication.class)
+                .web(WebApplicationType.NONE)
+                .properties("hopon.catalog.provenance=classpath:catalog/provenance.json")
+                .run()) {
+            assertThat(context.getBean(CatalogSnapshot.class)).isNotNull();
+        }
+    }
+
+    @Test
+    void applicationStartupFailsWhenProvenanceCountsDoNotMatchCatalog() {
+        assertThatThrownBy(() -> new SpringApplicationBuilder(HopOnApplication.class)
+                .web(WebApplicationType.NONE)
+                .properties("hopon.catalog.provenance=classpath:catalog/invalid/provenance-count-mismatch.json")
+                .run())
+                .satisfies(failure -> {
+                    Throwable rootCause = failure;
+                    while (rootCause.getCause() != null) {
+                        rootCause = rootCause.getCause();
+                    }
+                    assertThat(rootCause)
+                            .isInstanceOf(IllegalStateException.class)
+                            .hasMessageContaining("placeCounts does not match the snapshot for utrecht");
                 });
     }
 

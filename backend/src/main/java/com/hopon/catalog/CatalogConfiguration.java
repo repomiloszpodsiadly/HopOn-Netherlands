@@ -7,6 +7,11 @@ import org.springframework.context.annotation.Configuration;
 public class CatalogConfiguration {
 
     @Bean
+    CatalogProvenanceValidator catalogProvenanceValidator() {
+        return new CatalogProvenanceValidator();
+    }
+
+    @Bean
     CatalogSnapshot catalogSnapshot(CatalogSnapshotLoader loader) {
         return loader.snapshot();
     }

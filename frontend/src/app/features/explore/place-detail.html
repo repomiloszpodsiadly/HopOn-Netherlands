@@ -11,17 +11,38 @@
       <span aria-hidden="true">&#215;</span>
     </button>
   </div>
-  <div class="place-detail__visual">
+  <figure class="place-detail__visual" [class.place-detail__visual--image]="isLicensedLocalImage()">
     @if (isLicensedLocalImage()) {
-      <img [src]="place.imagePath" [alt]="place.name" loading="lazy" (error)="onImageError()" />
-      <span>Image reference: {{ place.imageAttributionId }}</span>
+      <img
+        [src]="place.imagePath"
+        [srcset]="responsiveImageSrcSet()"
+        [sizes]="imageSizes"
+        [style.object-position]="imageAttribution()?.objectPosition"
+        width="1280"
+        height="960"
+        [alt]="place.name"
+        loading="lazy"
+        decoding="async"
+        (error)="onImageError()"
+      />
+      @if (imageAttribution(); as attribution) {
+        <figcaption class="place-detail__credit">
+          <a [href]="attribution.sourceUrl" target="_blank" rel="noopener noreferrer">
+            Photo by {{ attribution.author }}
+          </a>
+          <span aria-hidden="true">·</span>
+          <a [href]="attribution.licenseUrl" target="_blank" rel="noopener noreferrer">
+            {{ attribution.licenseLabel }}
+          </a>
+        </figcaption>
+      }
     } @else {
       <span class="place-detail__fallback-mark" aria-hidden="true">&#10022;</span>
       <span>From the verified {{ cityName }} catalog</span>
     }
-  </div>
-  <h2 #heading id="place-detail-title" tabindex="-1">{{ place.name }}</h2>
-  <p class="place-detail__description">{{ place.shortDescription }}</p>
+  </figure>
+  <h2 #heading id="place-detail-title" aria-describedby="place-detail-description" tabindex="-1">{{ place.name }}</h2>
+  <p class="place-detail__description" id="place-detail-description">{{ place.shortDescription }}</p>
   <p class="place-detail__location">
     {{ cityName }} · {{ place.latitude.toFixed(4) }}, {{ place.longitude.toFixed(4) }}
   </p>

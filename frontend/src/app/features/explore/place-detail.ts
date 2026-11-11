@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { PlaceDto } from '../../core/models/catalog.models';
 import { NearbyHub, formatApproximateDistance } from './nearby-hubs';
+import { getPlaceImageAttribution, type PlaceImageAttribution } from './place-image-attribution';
 
 export type AddPlaceEvent = Readonly<{
   placeId: string;
@@ -38,6 +39,7 @@ export class PlaceDetailComponent implements OnChanges {
 
   @ViewChild('heading') private readonly heading?: ElementRef<HTMLElement>;
   readonly failedImage = signal(false);
+  readonly imageSizes = '(max-width: 900px) calc(100vw - 46px), 348px';
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['place']) {
@@ -51,11 +53,27 @@ export class PlaceDetailComponent implements OnChanges {
 
   isLicensedLocalImage(): boolean {
     const path = this.place.imagePath;
+    const attributionId = this.place.imageAttributionId;
     return path !== null
-      && this.place.imageAttributionId !== null
+      && attributionId !== null
+      && getPlaceImageAttribution(attributionId) !== null
       && !this.failedImage()
-      && path.startsWith('/assets/catalog/')
-      && !path.includes('..');
+      && path === `/assets/catalog/${attributionId}.jpg`;
+  }
+
+  imageAttribution(): PlaceImageAttribution | null {
+    return this.isLicensedLocalImage()
+      ? getPlaceImageAttribution(this.place.imageAttributionId)
+      : null;
+  }
+
+  responsiveImageSrcSet(): string | null {
+    if (!this.isLicensedLocalImage() || this.place.imagePath === null) {
+      return null;
+    }
+
+    const smallImagePath = this.place.imagePath.replace(/\.jpg$/, '-640.jpg');
+    return `${smallImagePath} 640w, ${this.place.imagePath} 1280w`;
   }
 
   onImageError(): void {

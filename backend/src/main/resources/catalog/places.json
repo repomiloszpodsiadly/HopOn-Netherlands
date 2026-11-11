@@ -24308,6 +24308,8 @@
                      "tourism=attraction"
                  ],
         "shortDescription":  "A mapped architectural place in Amsterdam.",
+        "imagePath":  "/assets/catalog/royal-palace-amsterdam.jpg",
+        "imageAttributionId":  "royal-palace-amsterdam",
         "sourceUrl":  "https://www.openstreetmap.org/relation/3580875",
         "sourceType":  "relation",
         "sourceOsmId":  "3580875",
@@ -36556,6 +36558,8 @@
                      "architecture"
                  ],
         "shortDescription":  "A mapped architectural place in Rotterdam.",
+        "imagePath":  "/assets/catalog/erasmus-bridge-rotterdam.jpg",
+        "imageAttributionId":  "erasmus-bridge-rotterdam",
         "sourceUrl":  "https://www.openstreetmap.org/relation/20774225",
         "sourceType":  "relation",
         "sourceOsmId":  "20774225",
@@ -50719,6 +50723,8 @@
                      "tourism=attraction"
                  ],
         "shortDescription":  "A mapped architectural place in Utrecht.",
+        "imagePath":  "/assets/catalog/dom-tower-utrecht.jpg",
+        "imageAttributionId":  "dom-tower-utrecht",
         "sourceUrl":  "https://www.openstreetmap.org/way/262779230",
         "sourceType":  "way",
         "sourceOsmId":  "262779230",

@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "verifiedOn": "2026-11-11",
+  "attributions": [
+    {
+      "id": "royal-palace-amsterdam",
+      "placeId": "amsterdam-relation-3580875",
+      "placeName": "Royal Palace",
+      "cityId": "amsterdam",
+      "imagePath": "/assets/catalog/royal-palace-amsterdam.jpg",
+      "responsiveImagePaths": [
+        "/assets/catalog/royal-palace-amsterdam-640.jpg",
+        "/assets/catalog/royal-palace-amsterdam.jpg"
+      ],
+      "sourceFile": "Royal Palace Amsterdam.jpg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Royal_Palace_Amsterdam.jpg",
+      "author": "Elekes Andor",
+      "licenseName": "Creative Commons Attribution-Share Alike 4.0 International",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "redistributionLicenseName": "Creative Commons Attribution-Share Alike 4.0 International",
+      "redistributionLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "commercialUsePermitted": true,
+      "shareAlikeRequired": true,
+      "displayCredit": "Photo by Elekes Andor, CC BY-SA 4.0",
+      "changes": "Used the Commons 1280 px JPEG derivative; re-encoded both local variants at JPEG quality 82 and resized one to 640×480. The interface applies a CSS object-fit crop; local files are not cropped or retouched.",
+      "verifiedOn": "2026-11-11"
+    },
+    {
+      "id": "erasmus-bridge-rotterdam",
+      "placeId": "rotterdam-relation-20774225",
+      "placeName": "Erasmus Bridge",
+      "cityId": "rotterdam",
+      "imagePath": "/assets/catalog/erasmus-bridge-rotterdam.jpg",
+      "responsiveImagePaths": [
+        "/assets/catalog/erasmus-bridge-rotterdam-640.jpg",
+        "/assets/catalog/erasmus-bridge-rotterdam.jpg"
+      ],
+      "sourceFile": "ErasmusBridge-Rotterdam.jpg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:ErasmusBridge-Rotterdam.jpg",
+      "author": "acediscovery",
+      "licenseName": "Creative Commons Attribution 4.0 International",
+      "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "redistributionLicenseName": "Creative Commons Attribution 4.0 International",
+      "redistributionLicenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+      "commercialUsePermitted": true,
+      "shareAlikeRequired": false,
+      "displayCredit": "Photo by acediscovery, CC BY 4.0",
+      "changes": "Used the Commons 1280 px JPEG derivative; re-encoded both local variants at JPEG quality 82 and resized one to 640×480. The interface applies a CSS object-fit crop; local files are not cropped or retouched.",
+      "verifiedOn": "2026-11-11"
+    },
+    {
+      "id": "dom-tower-utrecht",
+      "placeId": "utrecht-way-262779230",
+      "placeName": "Dom Tower",
+      "cityId": "utrecht",
+      "imagePath": "/assets/catalog/dom-tower-utrecht.jpg",
+      "responsiveImagePaths": [
+        "/assets/catalog/dom-tower-utrecht-640.jpg",
+        "/assets/catalog/dom-tower-utrecht.jpg"
+      ],
+      "sourceFile": "Domtoren vanaf de Maartensbrug.jpg",
+      "sourcePageUrl": "https://commons.wikimedia.org/wiki/File:Domtoren_vanaf_de_Maartensbrug.jpg",
+      "author": "tED",
+      "licenseName": "Creative Commons Attribution 2.0 Generic",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.0/",
+      "redistributionLicenseName": "Creative Commons Attribution 2.0 Generic",
+      "redistributionLicenseUrl": "https://creativecommons.org/licenses/by/2.0/",
+      "commercialUsePermitted": true,
+      "shareAlikeRequired": false,
+      "displayCredit": "Photo by tED, CC BY 2.0",
+      "changes": "Used the Commons 1280 px JPEG derivative; re-encoded both local variants at JPEG quality 82 and resized one to 640×480. The interface applies a CSS object-fit crop; local files are not cropped or retouched.",
+      "verifiedOn": "2026-11-11"
+    }
+  ]
+}

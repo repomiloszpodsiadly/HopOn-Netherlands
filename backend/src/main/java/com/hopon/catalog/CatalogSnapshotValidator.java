@@ -17,6 +17,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 @Component
 public final class CatalogSnapshotValidator {
@@ -35,6 +36,7 @@ public final class CatalogSnapshotValidator {
             "rotterdam", new CityBounds(51.84, 52.03, 4.25, 4.68),
             "utrecht", new CityBounds(52.00, 52.18, 4.95, 5.25));
     private static final Set<String> OSM_TYPES = Set.of("node", "way", "relation");
+    private static final Pattern IMAGE_ATTRIBUTION_ID = Pattern.compile("[a-z0-9]+(?:-[a-z0-9]+)*");
     private static final double NEAR_DUPLICATE_DISTANCE_METERS = 30.0;
     private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
@@ -276,10 +278,16 @@ public final class CatalogSnapshotValidator {
     }
 
     private static void validateImageMetadata(Place place, List<String> errors) {
-        boolean hasImagePath = !isBlank(place.imagePath());
-        boolean hasAttribution = !isBlank(place.imageAttributionId());
+        boolean hasImagePath = place.imagePath() != null;
+        boolean hasAttribution = place.imageAttributionId() != null;
         if (hasImagePath != hasAttribution) {
             errors.add("image path and attribution ID must be provided together for " + place.id());
+        } else if (hasImagePath) {
+            if (!IMAGE_ATTRIBUTION_ID.matcher(place.imageAttributionId()).matches()) {
+                errors.add("image attribution ID must be a lowercase slug for " + place.id());
+            } else if (!("/assets/catalog/" + place.imageAttributionId() + ".jpg").equals(place.imagePath())) {
+                errors.add("image path must match the attribution ID under /assets/catalog/ for " + place.id());
+            }
         }
     }
 

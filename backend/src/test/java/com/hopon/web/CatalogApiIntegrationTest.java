@@ -118,6 +118,19 @@ class CatalogApiIntegrationTest {
     }
 
     @Test
+    void returnsLocalImagePathAndAttributionIdForLicensedCatalogPlace() throws Exception {
+        Place target = snapshot.places().stream()
+                .filter(place -> place.id().equals("amsterdam-relation-3580875"))
+                .findFirst()
+                .orElseThrow();
+
+        mockMvc.perform(get("/api/places/{id}", target.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.imagePath").value("/assets/catalog/royal-palace-amsterdam.jpg"))
+                .andExpect(jsonPath("$.imageAttributionId").value("royal-palace-amsterdam"));
+    }
+
+    @Test
     void returnsEveryPlaceForLargeCityCatalogWithoutClippingResults() throws Exception {
         List<String> expectedIds = snapshot.places().stream()
                 .filter(place -> place.cityId().equals("amsterdam"))

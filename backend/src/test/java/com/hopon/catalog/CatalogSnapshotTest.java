@@ -93,6 +93,9 @@ class CatalogSnapshotTest {
             assertThat(place.sourceUrl()).isEqualTo(osmUrl(place.sourceType(), place.sourceOsmId()));
             assertThat(place.sourceTags()).containsKey("name");
             assertThat(place.imagePath() == null).isEqualTo(place.imageAttributionId() == null);
+            if (place.imagePath() != null) {
+                assertThat(place.imagePath()).isEqualTo("/assets/catalog/" + place.imageAttributionId() + ".jpg");
+            }
         });
         assertThat(snapshot.hubs()).allSatisfy(hub -> {
             assertThat(hub.latitude()).isBetween(-90.0, 90.0);
@@ -300,6 +303,30 @@ class CatalogSnapshotTest {
     }
 
     @Test
+    void rejectsImagePathsThatDoNotMatchTheirAttributionId() {
+        Place imagePlace = snapshot.places().stream()
+                .filter(place -> place.imagePath() != null)
+                .findFirst()
+                .orElseThrow();
+        Place mismatchedImage = copyPlaceWithImage(
+                imagePlace,
+                "/assets/catalog/other-place.jpg",
+                imagePlace.imageAttributionId());
+        List<Place> places = new ArrayList<>(snapshot.places());
+        places.set(places.indexOf(imagePlace), mismatchedImage);
+
+        assertThatThrownBy(() -> validator.validate(new CatalogSnapshot(snapshot.cities(), places, snapshot.hubs())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("image path must match the attribution ID under /assets/catalog/");
+
+        Place missingAttribution = copyPlaceWithImage(imagePlace, imagePlace.imagePath(), null);
+        places.set(places.indexOf(mismatchedImage), missingAttribution);
+        assertThatThrownBy(() -> validator.validate(new CatalogSnapshot(snapshot.cities(), places, snapshot.hubs())))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("image path and attribution ID must be provided together");
+    }
+
+    @Test
     void applicationStartupFailsWhenCatalogSnapshotIsInvalid() {
         assertThatThrownBy(() -> new SpringApplicationBuilder(HopOnApplication.class)
                 .web(WebApplicationType.NONE)
@@ -406,6 +433,24 @@ class CatalogSnapshotTest {
                 sourceType,
                 sourceOsmId,
                 sourceTags);
+    }
+
+    private static Place copyPlaceWithImage(Place place, String imagePath, String imageAttributionId) {
+        return new Place(
+                place.id(),
+                place.cityId(),
+                place.name(),
+                place.category(),
+                place.latitude(),
+                place.longitude(),
+                place.tags(),
+                place.shortDescription(),
+                imagePath,
+                imageAttributionId,
+                place.sourceUrl(),
+                place.sourceType(),
+                place.sourceOsmId(),
+                place.sourceTags());
     }
 
     private static MobilityHub copyHub(

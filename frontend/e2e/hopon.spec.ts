@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Page, type Response } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -144,6 +144,417 @@ test('adds Discover places once, restores the tab draft, and asks before changin
   await expect(page.locator('.draft-panel .section-heading span')).toHaveText('1 PLACE');
 });
 
+test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.unroute(openFreeMapStyleUrl);
+  let blockedMapRequests = 0;
+  await page.route(openFreeMapStyleUrl, (route) => {
+    blockedMapRequests += 1;
+    return route.fulfill({ status: 503, contentType: 'text/plain', body: 'Map blocked for CRUD check' });
+  });
+
+  const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
+  const initialPlansResponse = await page.request.get('http://127.0.0.1:4300/api/plans');
+  expect(initialPlansResponse.status()).toBe(200);
+  expect(await initialPlansResponse.json()).toEqual([]);
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.place-card').first()).toBeVisible();
+  expect(blockedMapRequests).toBeGreaterThan(0);
+
+  const pickedNames: string[] = [];
+  for (let index = 0; index < 3; index += 1) {
+    pickedNames.push(await addExplorePlaceFromCard(page, index));
+  }
+  const initialDraft = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
+      cityId: string;
+      name: string;
+      placeIds: string[];
+    } | null,
+  );
+  expect(initialDraft?.cityId).toBe('amsterdam');
+  expect(initialDraft?.placeIds).toHaveLength(3);
+
+  const plansNavigation = page.locator('app-main-navigation a[href="/plans"]');
+  const firstListRead = page.waitForResponse((response) => isPlansListRead(response));
+  await plansNavigation.click();
+  await expect(page).toHaveURL(/\/plans$/);
+  expect(await (await firstListRead).json()).toEqual([]);
+  await expect(page.locator('.plans-empty')).toBeVisible();
+
+  await page.getByRole('link', { name: 'Create a plan', exact: true }).click();
+  await expect(page.locator('#plan-name')).toBeVisible();
+  await expect(page.locator('.editor-place')).toHaveCount(3);
+  await page.reload();
+  await expect(page.locator('#plan-name')).toBeVisible();
+  await expect(page.locator('.editor-place')).toHaveCount(3);
+  const savedName = 'Amsterdam after the map closed';
+  await page.locator('#plan-name').fill(savedName);
+  await page.getByRole('button', { name: `Move ${pickedNames[0]} down` }).click();
+  const createdOrder = [initialDraft!.placeIds[1], initialDraft!.placeIds[0], initialDraft!.placeIds[2]];
+  await expect(page.getByRole('button', { name: 'Save plan' })).toBeEnabled();
+
+  const postResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans',
+  );
+  await page.getByRole('button', { name: 'Save plan' }).click();
+  const postResponse = await postResponsePromise;
+  if (postResponse.status() !== 201) {
+    throw new Error(`Real plan POST returned ${postResponse.status()}: ${await postResponse.text()}`);
+  }
+  expect(postResponse.status()).toBe(201);
+  const created = await postResponse.json() as {
+    id: string;
+    name: string;
+    cityId: string;
+    placeIds: string[];
+  };
+  expect(postResponse.headers()['location']).toBe(`/api/plans/${created.id}`);
+  expect(created).toMatchObject({ name: savedName, cityId: 'amsterdam', placeIds: createdOrder });
+  expect(postResponse.request().postDataJSON()).toEqual({
+    name: savedName,
+    cityId: 'amsterdam',
+    placeIds: createdOrder,
+  });
+  await expect(page).toHaveURL(`/plans/${created.id}`);
+  await expect(page.locator('.details-stop__copy h3')).toHaveText([
+    amsterdamPlaces.find((place) => place.id === createdOrder[0])!.name,
+    amsterdamPlaces.find((place) => place.id === createdOrder[1])!.name,
+    amsterdamPlaces.find((place) => place.id === createdOrder[2])!.name,
+  ]);
+
+  const detailListRead = page.waitForResponse((response) => isPlansListRead(response));
+  await page.locator('.details-topbar-link').click();
+  expect(await (await detailListRead).json()).toEqual([created]);
+  await page.getByRole('link', { name: `Open ${savedName} in Amsterdam` }).click();
+  await page.reload();
+  await expect(page.locator('#saved-plan-name')).toHaveValue(savedName);
+  await expect(page.locator('.details-stop__copy h3')).toHaveText([
+    amsterdamPlaces.find((place) => place.id === createdOrder[0])!.name,
+    amsterdamPlaces.find((place) => place.id === createdOrder[1])!.name,
+    amsterdamPlaces.find((place) => place.id === createdOrder[2])!.name,
+  ]);
+
+  const updatedName = 'Amsterdam, one stop at a time';
+  await page.locator('#saved-plan-name').fill(updatedName);
+  const updatedOrder = [createdOrder[0], createdOrder[2], createdOrder[1]];
+  await page.getByRole('button', {
+    name: `Move ${amsterdamPlaces.find((place) => place.id === createdOrder[2])!.name} up`,
+  }).click();
+  const putResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/plans/${created.id}`,
+  );
+  await page.getByRole('button', { name: 'Save changes' }).click();
+  const putResponse = await putResponsePromise;
+  expect(putResponse.status()).toBe(200);
+  const updated = await putResponse.json() as { name: string; cityId: string; placeIds: string[] };
+  expect(updated).toMatchObject({ name: updatedName, cityId: 'amsterdam', placeIds: updatedOrder });
+  await page.reload();
+  await expect(page.locator('#saved-plan-name')).toHaveValue(updatedName);
+  await expect(page.locator('.details-stop__copy h3')).toHaveText([
+    amsterdamPlaces.find((place) => place.id === updatedOrder[0])!.name,
+    amsterdamPlaces.find((place) => place.id === updatedOrder[1])!.name,
+    amsterdamPlaces.find((place) => place.id === updatedOrder[2])!.name,
+  ]);
+
+  const deleteResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'DELETE' && new URL(response.url()).pathname === `/api/plans/${created.id}`,
+  );
+  const emptyListRead = page.waitForResponse((response) => isPlansListRead(response));
+  await page.locator('.plan-details-heading__actions .plans-button--danger').click();
+  const confirmation = page.locator('#delete-plan-confirmation');
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Delete plan', exact: true }).click();
+  const deleteResponse = await deleteResponsePromise;
+  expect(deleteResponse.status()).toBe(204);
+  expect(await deleteResponse.text()).toBe('');
+  await expect(page).toHaveURL(/\/plans$/);
+  expect(await (await emptyListRead).json()).toEqual([]);
+  await expect(page.locator('.plans-empty')).toBeVisible();
+  const missingStatus = await page.evaluate(async (id) => (await fetch(`/api/plans/${id}`)).status, created.id);
+  expect(missingStatus).toBe(404);
+});
+
+test('keeps cross-city drafts separate through explicit keep and replace decisions', async ({ page }) => {
+  test.setTimeout(60_000);
+  await page.setViewportSize({ width: 390, height: 844 });
+  const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
+  const rotterdamPlaces = await getActualPlaces(page, 'rotterdam');
+  await page.goto('/');
+  const amsterdamName = await addExplorePlaceFromCard(page, 0);
+  const originalDraft = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
+      cityId: string;
+      name: string;
+      placeIds: string[];
+    } | null,
+  );
+  expect(originalDraft?.cityId).toBe('amsterdam');
+  expect(originalDraft?.placeIds).toHaveLength(1);
+
+  await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
+  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
+  const rotterdamCard = page.locator('.place-card').first();
+  await rotterdamCard.scrollIntoViewIfNeeded();
+  const rotterdamName = await rotterdamCard.locator('.place-card__name').innerText();
+  await rotterdamCard.click();
+  const addRotterdam = page.locator('.place-detail').getByRole('button', { name: 'Add to plan' });
+  await addRotterdam.click();
+  const conflict = page.getByRole('region', { name: 'Keep the existing draft?' });
+  await expect(conflict).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
+    .toMatchObject({ cityId: 'amsterdam', placeIds: originalDraft!.placeIds });
+  await conflict.getByRole('button', { name: 'Keep existing' }).click();
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
+    .toMatchObject({ cityId: 'amsterdam', placeIds: originalDraft!.placeIds });
+
+  await addRotterdam.click();
+  await expect(conflict).toBeVisible();
+  await conflict.getByRole('button', { name: 'Start new for Rotterdam' }).click();
+  const replacementDraft = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
+      cityId: string;
+      placeIds: string[];
+    } | null,
+  );
+  expect(replacementDraft?.cityId).toBe('rotterdam');
+  expect(replacementDraft?.placeIds).toHaveLength(1);
+  expect(replacementDraft!.placeIds.every((id) => rotterdamPlaces.some((place) => place.id === id))).toBe(true);
+  expect(replacementDraft!.placeIds.some((id) => amsterdamPlaces.some((place) => place.id === id))).toBe(false);
+  expect(amsterdamName).not.toBe(rotterdamName);
+
+  const listRead = page.waitForResponse((response) => isPlansListRead(response));
+  await page.locator('app-main-navigation a[href="/plans"]').click();
+  await listRead;
+  await page.getByRole('link', { name: 'Create a plan', exact: true }).click();
+  await page.locator('#plan-name').fill('Rotterdam without mixing cities');
+  const postResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans',
+  );
+  await page.getByRole('button', { name: 'Save plan' }).click();
+  const postResponse = await postResponsePromise;
+  if (postResponse.status() !== 201) {
+    throw new Error(`Real plan POST returned ${postResponse.status()}: ${await postResponse.text()}`);
+  }
+  expect(postResponse.status()).toBe(201);
+  const created = await postResponse.json() as { id: string; cityId: string; placeIds: string[] };
+  expect(created.cityId).toBe('rotterdam');
+  expect(created.placeIds).toEqual(replacementDraft!.placeIds);
+  expect(created.placeIds.every((id) => rotterdamPlaces.some((place) => place.id === id))).toBe(true);
+  await expect(page).toHaveURL(`/plans/${created.id}`);
+  await deletePlanThroughUi(page);
+});
+
+test('keeps all 13 real draft places through refresh and saves after one explicit removal', async ({ page }) => {
+  test.setTimeout(60_000);
+  const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
+  const thirteenPlaces = amsterdamPlaces.slice(0, 13);
+  expect(thirteenPlaces).toHaveLength(13);
+  const placeIds = thirteenPlaces.map((place) => place.id);
+  await page.addInitScript(({ ids }) => {
+    sessionStorage.setItem('hopon:draft:v1', JSON.stringify({
+      schemaVersion: 1,
+      cityId: 'amsterdam',
+      name: 'Thirteen real stops',
+      placeIds: ids,
+      updatedAt: '2026-11-10T12:00:00.000Z',
+    }));
+  }, { ids: placeIds });
+
+  await page.goto('/plans/new?city=amsterdam');
+  await expect(page.locator('.editor-place')).toHaveCount(13);
+  await expect(page.getByText('This draft has more than 12 places.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Save plan' })).toBeDisabled();
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null').placeIds))
+    .toEqual(placeIds);
+
+  await page.reload();
+  await expect(page.locator('.editor-place')).toHaveCount(13);
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null').placeIds))
+    .toEqual(placeIds);
+
+  await page.getByRole('button', { name: `Remove ${thirteenPlaces[12].name}` }).click();
+  await expect(page.locator('.editor-place')).toHaveCount(12);
+  const trimmedDraft = await page.evaluate(() =>
+    JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as { placeIds: string[] },
+  );
+  expect(trimmedDraft.placeIds).toEqual(placeIds.slice(0, 12));
+  await expect(page.getByRole('button', { name: 'Save plan' })).toBeEnabled();
+
+  const postResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans',
+  );
+  await page.getByRole('button', { name: 'Save plan' }).click();
+  const postResponse = await postResponsePromise;
+  expect(postResponse.status()).toBe(201);
+  const created = await postResponse.json() as { id: string; placeIds: string[] };
+  expect(created.placeIds).toEqual(placeIds.slice(0, 12));
+  await expect(page).toHaveURL(`/plans/${created.id}`);
+  await deletePlanThroughUi(page);
+});
+
+test('preserves create inputs after real-shaped 400, 500 and offline failures without auto-retrying', async ({ page }) => {
+  const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
+  const placeIds = amsterdamPlaces.slice(0, 2).map((place) => place.id);
+  await page.addInitScript(({ ids }) => {
+    sessionStorage.setItem('hopon:draft:v1', JSON.stringify({
+      schemaVersion: 1,
+      cityId: 'amsterdam',
+      name: 'Recovery afternoon',
+      placeIds: ids,
+      updatedAt: '2026-11-10T12:00:00.000Z',
+    }));
+  }, { ids: placeIds });
+
+  let postAttempts = 0;
+  await page.route('**/api/plans', async (route) => {
+    if (route.request().method() !== 'POST') {
+      await route.continue();
+      return;
+    }
+    postAttempts += 1;
+    if (postAttempts === 1) {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ status: 400, title: 'Bad Request', detail: 'Plan name is already in use.' }),
+      });
+    } else if (postAttempts === 2) {
+      await route.fulfill({
+        status: 500,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ status: 500, title: 'Internal Server Error', detail: 'The write outcome is unknown.' }),
+      });
+    } else {
+      await route.abort('failed');
+    }
+  });
+  await page.goto('/plans/new?city=amsterdam');
+  await expect(page.locator('.editor-place')).toHaveCount(2);
+  await page.locator('#plan-name').fill('Keep every stop');
+
+  const expectPreservedDraft = async () => {
+    await expect(page.locator('#plan-name')).toHaveValue('Keep every stop');
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
+      .toMatchObject({ name: 'Keep every stop', cityId: 'amsterdam', placeIds });
+    await expect(page.locator('.editor-place h3')).toHaveText([
+      amsterdamPlaces.find((place) => place.id === placeIds[0])!.name,
+      amsterdamPlaces.find((place) => place.id === placeIds[1])!.name,
+    ]);
+  };
+
+  await page.getByRole('button', { name: 'Save plan' }).click();
+  await expect(page.locator('.editor-state[role="alert"]')).toContainText('Plan name is already in use.');
+  await expectPreservedDraft();
+  expect(postAttempts).toBe(1);
+
+  await page.getByRole('button', { name: 'Save plan' }).click();
+  await expect(page.locator('.editor-state[role="alert"]')).toContainText('server may have created the plan');
+  await expect(page.locator('.editor-state[role="alert"]')).toContainText('Check Saved Plans before trying again');
+  await expectPreservedDraft();
+  expect(postAttempts).toBe(2);
+
+  await page.getByRole('button', { name: 'Save plan' }).click();
+  await expect(page.locator('.editor-state[role="alert"]')).toContainText('Check that the backend is running');
+  await expect(page.locator('.editor-state[role="alert"]')).toContainText('server may have created the plan');
+  await expectPreservedDraft();
+  expect(postAttempts).toBe(3);
+  expect(page.url()).toContain('/plans/new');
+});
+
+test('keeps saved plans usable at mobile widths with keyboard and browser history', async ({ page }) => {
+  test.setTimeout(60_000);
+  const [place] = await getActualPlaces(page, 'amsterdam');
+  const createResponse = await page.request.post('http://127.0.0.1:4300/api/plans', {
+    data: { name: 'Mobile quality check', cityId: 'amsterdam', placeIds: [place.id] },
+  });
+  expect(createResponse.status()).toBe(201);
+  const created = await createResponse.json() as { id: string };
+  await page.addInitScript(({ placeId }) => {
+    sessionStorage.setItem('hopon:draft:v1', JSON.stringify({
+      schemaVersion: 1,
+      cityId: 'amsterdam',
+      name: 'Responsive editor check',
+      placeIds: [placeId],
+      updatedAt: '2026-11-10T12:00:00.000Z',
+    }));
+  }, { placeId: place.id });
+
+  try {
+    await page.goto('/plans');
+    await expect(page.locator('.saved-plan-card')).toBeVisible();
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
+      await expect(page.locator('app-main-navigation a[href="/plans"]')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    }
+
+    await page.getByRole('link', { name: 'Create a plan', exact: true }).click();
+    await expect(page.locator('.editor-place')).toHaveCount(1);
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
+      await expect(page.locator('app-main-navigation a[href="/plans"]')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+      const navigationBounds = await page.locator('app-main-navigation a[href="/plans"]').boundingBox();
+      const saveBounds = await page.getByRole('button', { name: 'Save plan' }).boundingBox();
+      expect(navigationBounds?.height).toBeGreaterThanOrEqual(44);
+      expect(saveBounds?.height).toBeGreaterThanOrEqual(44);
+    }
+    await page.locator('app-main-navigation a[href="/plans"]').click();
+    await expect(page).toHaveURL(/\/plans$/);
+
+    await page.getByRole('link', { name: 'Open Mobile quality check in Amsterdam' }).click();
+    await expect(page).toHaveURL(`/plans/${created.id}`);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/plans$/);
+    await page.goForward();
+    await expect(page).toHaveURL(`/plans/${created.id}`);
+    await expect(page.locator('#saved-plan-name')).toHaveValue('Mobile quality check');
+
+    for (const width of [360, 390]) {
+      await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
+      await expect(page.locator('app-main-navigation a[href="/plans"]')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    }
+
+    const deleteButton = page.getByRole('button', { name: 'Delete plan', exact: true });
+    await page.setViewportSize({ width: 360, height: 800 });
+    await deleteButton.click();
+    const confirmation = page.locator('#delete-plan-confirmation');
+    await expect(confirmation).toBeVisible();
+    await expect(confirmation).toBeInViewport();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(360);
+    const dialogButtonBounds = await confirmation.getByRole('button', { name: 'Cancel', exact: true }).boundingBox();
+    expect(dialogButtonBounds?.height).toBeGreaterThanOrEqual(44);
+    await page.keyboard.press('Escape');
+    await expect(confirmation).toBeHidden();
+    await expect(deleteButton).toBeFocused();
+
+    await page.setViewportSize({ width: 390, height: 844 });
+    await deleteButton.click();
+    await expect(confirmation).toBeVisible();
+    const cancelButton = confirmation.getByRole('button', { name: 'Cancel', exact: true });
+    await cancelButton.click();
+    await expect(confirmation).toBeHidden();
+    await expect(deleteButton).toBeFocused();
+    await deleteButton.click();
+    await expect(confirmation).toBeVisible();
+    const deleteResponsePromise = page.waitForResponse((response) =>
+      response.request().method() === 'DELETE'
+        && new URL(response.url()).pathname === `/api/plans/${created.id}`,
+    );
+    await confirmation.getByRole('button', { name: 'Delete plan', exact: true }).click();
+    expect((await deleteResponsePromise).status()).toBe(204);
+    await expect(page).toHaveURL(/\/plans$/);
+    await expect(page.locator('.plans-empty')).toBeVisible();
+  } finally {
+    const remaining = await page.request.delete(`http://127.0.0.1:4300/api/plans/${created.id}`);
+    expect([204, 404]).toContain(remaining.status());
+  }
+});
+
 test('keeps search and tab draft usable when the OpenFreeMap style is unavailable', async ({ page }) => {
   test.setTimeout(20_000);
   await page.unroute('**/styles/liberty');
@@ -272,4 +683,51 @@ async function useIsolatedMapStyle(page: Page): Promise<void> {
   await page.route('**/__e2e/glyphs/**', (route) =>
     route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: Buffer.alloc(0) }),
   );
+}
+
+type ActualPlace = Readonly<{ id: string; cityId: string; name: string }>;
+
+async function getActualPlaces(page: Page, cityId: string): Promise<ActualPlace[]> {
+  const response = await page.request.get(
+    `http://127.0.0.1:4300/api/places?cityId=${encodeURIComponent(cityId)}`,
+  );
+  expect(response.status()).toBe(200);
+  const places = await response.json() as ActualPlace[];
+  expect(places.length).toBeGreaterThanOrEqual(13);
+  expect(places.every((place) => place.cityId === cityId && place.id.length > 0)).toBe(true);
+  return places;
+}
+
+async function addExplorePlaceFromCard(page: Page, index: number): Promise<string> {
+  const card = page.locator('.place-card').nth(index);
+  await expect(card).toBeVisible();
+  const placeName = await card.locator('.place-card__name').innerText();
+  await card.scrollIntoViewIfNeeded();
+  await card.click();
+  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
+  await expect(page.locator('.draft-feedback')).toContainText(/Added 1 place to the tab draft/);
+  return placeName;
+}
+
+function isPlansListRead(response: Response): boolean {
+  return response.request().method() === 'GET'
+    && new URL(response.url()).pathname === '/api/plans'
+    && !new URL(response.url()).search;
+}
+
+async function deletePlanThroughUi(page: Page): Promise<void> {
+  const planId = new URL(page.url()).pathname.split('/').at(-1);
+  if (!planId) {
+    throw new Error('Expected a saved plan details route before deleting the plan.');
+  }
+  const deleteResponsePromise = page.waitForResponse((response) =>
+    response.request().method() === 'DELETE'
+      && new URL(response.url()).pathname === `/api/plans/${planId}`,
+  );
+  await page.getByRole('button', { name: 'Delete plan', exact: true }).click();
+  const confirmation = page.locator('#delete-plan-confirmation');
+  await expect(confirmation).toBeVisible();
+  await confirmation.getByRole('button', { name: 'Delete plan', exact: true }).click();
+  expect((await deleteResponsePromise).status()).toBe(204);
+  await expect(page).toHaveURL(/\/plans$/);
 }

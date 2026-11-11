@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { ExplorePage } from './features/explore/explore-page';
 import { planDetailsCanDeactivate } from './features/plans/plan-details.guard';
+import { planCreateCanDeactivate } from './features/plans/plan-create.guard';
 
 export const routes: Routes = [
   { path: '', component: ExplorePage },
@@ -14,6 +15,7 @@ export const routes: Routes = [
     path: 'plans/new',
     loadComponent: () => import('./features/plans/plan-create-page')
       .then((module) => module.PlanCreatePage),
+    canDeactivate: [planCreateCanDeactivate],
   },
   {
     path: 'plans/:id',

@@ -87,6 +87,12 @@ function storeSeparateDraft(): string {
   return raw;
 }
 
+function dispatchBeforeUnload(): Event {
+  const event = new Event('beforeunload', { cancelable: true });
+  window.dispatchEvent(event);
+  return event;
+}
+
 describe('PlanDetailsPage', () => {
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -156,6 +162,7 @@ describe('PlanDetailsPage', () => {
   it('sends a complete ordered PUT and reconciles to the server response', async () => {
     const draft = storeSeparateDraft();
     const { harness, component, http } = await startPage();
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
     const nameInput = harness.routeNativeElement?.querySelector('#saved-plan-name') as HTMLInputElement;
     nameInput.value = 'A reordered Amsterdam day';
     nameInput.dispatchEvent(new Event('input'));
@@ -169,9 +176,13 @@ describe('PlanDetailsPage', () => {
 
     expect(component.placeIds()).toEqual([SECOND_PLACE_ID, FIRST_PLACE_ID, THIRD_PLACE_ID]);
     expect(component.dirty()).toBe(true);
+    await harness.fixture.whenStable();
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
     (harness.routeNativeElement?.querySelector('button[type="submit"]') as HTMLButtonElement).click();
     const request = http.expectOne(`/api/plans/${PLAN_ID}`);
     expect(request.request.method).toBe('PUT');
+    await harness.fixture.whenStable();
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
     expect(request.request.body).toEqual({
       name: 'A reordered Amsterdam day',
       cityId: 'amsterdam',
@@ -190,6 +201,7 @@ describe('PlanDetailsPage', () => {
     expect(component.plan()?.updatedAt).toBe('2026-11-10T12:00:00Z');
     expect(component.saveNotice()).toBe('Your changes are saved.');
     expect(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY)).toBe(draft);
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
   });
 
   it('preserves edits after a failed PUT', async () => {
@@ -256,6 +268,24 @@ describe('PlanDetailsPage', () => {
     expect(await navigation).toBe(false);
     expect(TestBed.inject(Router).url).toBe(`/plans/${PLAN_ID}`);
     http.expectNone('/api/plans');
+  });
+
+  it('removes its unload listener when a dirty route is explicitly discarded', async () => {
+    const { harness, component, http } = await startPage();
+    component.name.set('Unsaved title');
+    harness.detectChanges();
+    await harness.fixture.whenStable();
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+
+    const navigation = TestBed.inject(Router).navigateByUrl('/plans');
+    const discardDialog = await waitForDialog(harness, 'discard-plan-edits');
+    discardDialog?.querySelector<HTMLButtonElement>('.confirm-dialog__button--confirm')?.click();
+    expect(await navigation).toBe(true);
+    const listRequest = http.expectOne('/api/plans');
+    listRequest.flush([]);
+    await harness.fixture.whenStable();
+
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
   });
 
   it('allows an explicit discard and completes the guarded navigation', async () => {
@@ -332,6 +362,8 @@ describe('PlanDetailsPage', () => {
     confirm?.click();
     const request = http.expectOne(`/api/plans/${PLAN_ID}`);
     expect(request.request.method).toBe('DELETE');
+    await harness.fixture.whenStable();
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
     request.flush(null, { status: 204, statusText: 'No Content' });
     await harness.fixture.whenStable();
 
@@ -340,6 +372,7 @@ describe('PlanDetailsPage', () => {
     list.flush([]);
     await harness.fixture.whenStable();
     expect(harness.routeNativeElement?.textContent).toContain('Your plan book is ready.');
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(false);
   });
 
   it('keeps the details visible and reports a delete failure without navigating', async () => {

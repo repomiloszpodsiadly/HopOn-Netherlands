@@ -12,6 +12,10 @@
     <h1>Make a little<br /><em>room for wonder.</em></h1>
     <p class="plans-intro">Shape a thoughtful day from real places in {{ cityName(currentCityId()) }}.</p>
 
+    @if (navigationMessage(); as message) {
+      <p class="editor-notice" role="status" aria-live="polite">{{ message }}</p>
+    }
+
     @if (draftStore.storageUnavailable()) {
       <p class="editor-notice editor-notice--warning" role="status">Tab storage is unavailable. Your unsaved draft may not survive a refresh.</p>
     }
@@ -24,7 +28,7 @@
     @if (draftStore.validationError(); as validationError) {
       <div class="editor-state editor-state--error" role="alert">
         <p>{{ validationError }}</p>
-        <button class="editor-button editor-button--quiet" type="button" (click)="retryCatalog()">Retry catalog check</button>
+        <button class="editor-button editor-button--quiet" type="button" [disabled]="saving()" (click)="retryCatalog()">Retry catalog check</button>
       </div>
     }
 
@@ -34,7 +38,7 @@
       <div class="editor-state editor-state--error" role="alert">
         <h2>Places could not be loaded</h2>
         <p>{{ error }}</p>
-        <button class="editor-button editor-button--quiet" type="button" (click)="retryCatalog()">Retry</button>
+        <button class="editor-button editor-button--quiet" type="button" [disabled]="saving()" (click)="retryCatalog()">Retry</button>
       </div>
     }
 
@@ -50,6 +54,7 @@
             maxlength="80"
             autocomplete="off"
             [value]="draft.name"
+            [disabled]="saving()"
             (input)="onNameInput($event)"
             aria-describedby="plan-name-help"
           />
@@ -58,7 +63,7 @@
 
         <label class="editor-field" for="plan-city">
           <span>City</span>
-          <select id="plan-city" [value]="currentCityId()" [disabled]="draftStore.cityConflict() !== null || draftStore.isValidating()" (change)="onCitySelected($event)">
+          <select id="plan-city" [value]="currentCityId()" [disabled]="saving() || draftStore.cityConflict() !== null || draftStore.isValidating()" (change)="onCitySelected($event)">
             @for (cityId of cityIds; track cityId) {
               <option [value]="cityId">{{ cityName(cityId) }}</option>
             }
@@ -70,8 +75,8 @@
             <h2 id="plan-city-conflict-title">Keep the existing draft?</h2>
             <p>This tab has a {{ cityName(draft.cityId) }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?</p>
             <div class="editor-actions">
-              <button class="editor-button editor-button--quiet" type="button" (click)="keepExistingDraft()">Keep existing</button>
-              <button class="editor-button editor-button--primary" type="button" (click)="replaceDraftWithRequestedCity()">Start new for {{ conflict.cityName }}</button>
+              <button class="editor-button editor-button--quiet" type="button" [disabled]="saving()" (click)="keepExistingDraft()">Keep existing</button>
+              <button class="editor-button editor-button--primary" type="button" [disabled]="saving()" (click)="replaceDraftWithRequestedCity()">Start new for {{ conflict.cityName }}</button>
             </div>
           </section>
         }
@@ -111,9 +116,9 @@
                     }
                   </div>
                   <div class="editor-place__actions" [attr.aria-label]="'Reorder ' + (row.place?.name ?? 'unavailable place')">
-                    <button class="editor-icon-button" type="button" [disabled]="index === 0" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' up'" (click)="movePlace(row.id, 'up')">↑</button>
-                    <button class="editor-icon-button" type="button" [disabled]="index === draft.placeIds.length - 1" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' down'" (click)="movePlace(row.id, 'down')">↓</button>
-                    <button class="editor-remove" type="button" [attr.aria-label]="'Remove ' + (row.place?.name ?? 'unavailable place')" (click)="removePlace(row.id)">Remove</button>
+                    <button class="editor-icon-button" type="button" [disabled]="saving() || index === 0" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' up'" (click)="movePlace(row.id, 'up')">↑</button>
+                    <button class="editor-icon-button" type="button" [disabled]="saving() || index === draft.placeIds.length - 1" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' down'" (click)="movePlace(row.id, 'down')">↓</button>
+                    <button class="editor-remove" type="button" [disabled]="saving()" [attr.aria-label]="'Remove ' + (row.place?.name ?? 'unavailable place')" (click)="removePlace(row.id)">Remove</button>
                   </div>
                 </li>
               }
@@ -138,6 +143,15 @@
           </div>
         }
 
+        @if (createSuccess(); as message) {
+          <div class="editor-notice" role="status" aria-live="polite">
+            <p>{{ message }}</p>
+            @if (savedPlanId(); as planId) {
+              <a class="editor-inline-link" [routerLink]="['/plans', planId]">Open the saved plan</a>
+            }
+          </div>
+        }
+
         <div class="editor-actions editor-actions--submit">
           <button class="editor-button editor-button--primary" type="submit" [disabled]="!canSave()">
             {{ saving() ? 'Saving…' : 'Save plan' }}
@@ -149,5 +163,5 @@
   </main>
 
   <footer class="plans-footer"><span>HopOn Netherlands</span><span>A tab draft becomes a saved plan only after the backend confirms it.</span></footer>
-  <app-main-navigation />
+  <app-main-navigation [cityId]="requestedCityId()" />
 </div>

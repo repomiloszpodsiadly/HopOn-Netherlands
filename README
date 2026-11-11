@@ -1,6 +1,20 @@
 # HopOn Netherlands
 
-HopOn is a mobile-first guide to real places in Amsterdam, Rotterdam and Utrecht. Search and filter the curated catalog, explore places on a MapLibre map, view nearby mobility hubs and build a tab-only Discover draft.
+HopOn is a mobile-first guide to places in Amsterdam, Rotterdam and Utrecht. Search and filter the curated OpenStreetMap catalog, explore it on a MapLibre map, discover nearby mobility hubs, and use Discover by Vibe to shape a day around selected places.
+
+## Plans
+
+Choose between 1 and 12 unique places from one city to create a plan. A new plan remains a temporary draft in that browser tab's `sessionStorage` until it is saved. Saved Plans are stored by the Spring API in in-memory H2 and support the full Create → List → Read → Update → Delete flow. Saved plans survive page refreshes while the backend process is running; they reset when that process restarts.
+
+The API used by the plans screens is:
+
+| Request | Success response |
+| --- | --- |
+| `POST /api/plans` | `201 Created` with a `Location` header |
+| `GET /api/plans` | `200 OK` |
+| `GET /api/plans/{id}` | `200 OK`, or `404 Not Found` |
+| `PUT /api/plans/{id}` | `200 OK` |
+| `DELETE /api/plans/{id}` | `204 No Content`, or `404 Not Found` |
 
 ## Run locally (Windows PowerShell)
 
@@ -24,8 +38,32 @@ Use a Node.js version matching `^22.22.3 || ^24.15.0 || ^26.0.0` from `frontend/
 
 ## Checks
 
-From `frontend/`, run `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`.
+Backend tests and executable archive (PowerShell, from the repository root):
 
-For browser E2E, keep the backend running, install Chromium once with `npx playwright install chromium`, then run `npm run test:e2e`. The tests start a separate Angular server on port 4300 and use the real API proxy.
+```powershell
+cd backend
+.\gradlew.bat clean test bootJar
+```
 
-The backend uses in-memory H2, so its data resets when it stops. The city catalog is a static OpenStreetMap snapshot; map styles and tiles require a network connection.
+Frontend checks (PowerShell, from the repository root):
+
+```powershell
+cd frontend
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run build
+```
+
+For browser E2E, first start the backend with `.\.tools\run-backend.ps1` from the repository root in a separate terminal. Then, from `frontend/`, install Chromium once and run the browser suite:
+
+```powershell
+cd frontend
+npx playwright install chromium
+npm run test:e2e
+```
+
+Playwright starts a separate Angular server on port 4300 and proxies API requests to the running Spring backend at port 8080.
+
+The city catalog is a static OpenStreetMap snapshot. Map styles and tiles require a network connection; browsing and saved-plan CRUD remain available when map tiles cannot load.

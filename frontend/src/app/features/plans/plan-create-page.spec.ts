@@ -161,6 +161,8 @@ describe('PlanCreatePage', () => {
     const request = http.expectOne('/api/plans');
     expect(request.request.method).toBe('POST');
     expect(request.request.body).toEqual(requestPayload);
+    expect(Object.isFrozen(request.request.body)).toBe(true);
+    expect(Object.isFrozen((request.request.body as PlanUpsertRequest).placeIds)).toBe(true);
     expect(component.saving()).toBe(true);
 
     const response: PlanResponse = {
@@ -188,7 +190,7 @@ describe('PlanCreatePage', () => {
     expect(TestBed.inject(Router).url).toBe(`/plans/${PLAN_ID}`);
   });
 
-  it('does not clear a newer draft edit made while the create request is pending', async () => {
+  it('keeps and explains a newer draft when a confirmed POST matches the submitted snapshot', async () => {
     storeDraft(PLACE_IDS.slice(0, 2));
     const { harness, component, http } = await startPage('/plans/new');
 
@@ -209,19 +211,128 @@ describe('PlanCreatePage', () => {
       headers: new HttpHeaders({ Location: `/api/plans/${PLAN_ID}` }),
     });
     await harness.fixture.whenStable();
-    http.expectOne(`/api/plans/${PLAN_ID}`).flush(createdPlan);
-    await harness.fixture.whenStable();
-    http.expectOne(
-      (candidate) => candidate.url === '/api/places' && candidate.params.get('cityId') === 'amsterdam',
-    ).flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    harness.detectChanges();
 
     expect(currentStoredDraft()).toEqual({
       name: 'A newer draft edit',
       cityId: 'amsterdam',
       placeIds: [...PLACE_IDS.slice(0, 2)],
     });
+    expect(component.createSuccess()).toContain('newer unsaved tab draft remains');
+    expect(harness.routeNativeElement?.querySelector(`a[href="/plans/${PLAN_ID}"]`)?.textContent)
+      .toContain('Open the saved plan');
+    expect(TestBed.inject(Router).url).toBe('/plans/new');
+    http.expectNone(`/api/plans/${PLAN_ID}`);
+  });
+
+  it('blocks SPA exits while POST is pending without cancelling it, then releases on confirmed success', async () => {
+    storeDraft(PLACE_IDS.slice(0, 2));
+    const { harness, component, http } = await startPage('/plans/new');
+
+    component.save();
+    const request = http.expectOne('/api/plans');
+    const exitSelectors = [
+      '.plans-topbar .plans-brand',
+      '.plans-topbar .editor-back',
+      'app-main-navigation a[href*="#map-region"]',
+      'app-main-navigation a[href="/?city=amsterdam"]',
+      'app-main-navigation a[href="/plans"]',
+    ];
+    for (const selector of exitSelectors) {
+      const link = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(selector);
+      expect(link).not.toBeNull();
+      link!.click();
+      await harness.fixture.whenStable();
+      expect(TestBed.inject(Router).url).toBe('/plans/new');
+      expect(request.cancelled).toBe(false);
+    }
+
+    expect(await TestBed.inject(Router).navigateByUrl('/plans')).toBe(false);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.navigationMessage()).toBe('Saving in progress. Please wait for confirmation.');
+    expect(harness.routeNativeElement?.textContent).toContain('Saving in progress. Please wait for confirmation.');
+    expect(request.cancelled).toBe(false);
+
+    const pendingUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(pendingUnload);
+    expect(pendingUnload.defaultPrevented).toBe(true);
+
+    const savedPlan: PlanResponse = {
+      id: PLAN_ID,
+      name: 'Museum day',
+      cityId: 'amsterdam',
+      placeIds: [...PLACE_IDS.slice(0, 2)],
+      createdAt: '2026-11-10T12:00:00Z',
+      updatedAt: '2026-11-10T12:00:00Z',
+    };
+    request.flush(savedPlan, {
+      status: 201,
+      statusText: 'Created',
+      headers: new HttpHeaders({ Location: `/api/plans/${PLAN_ID}` }),
+    });
+    await harness.fixture.whenStable();
+    http.expectOne(`/api/plans/${PLAN_ID}`).flush(savedPlan);
+    await harness.fixture.whenStable();
+    http.expectOne(
+      (candidate) => candidate.url === '/api/places' && candidate.params.get('cityId') === 'amsterdam',
+    ).flush(AMSTERDAM_PLACES);
+    await harness.fixture.whenStable();
+
     expect(TestBed.inject(Router).url).toBe(`/plans/${PLAN_ID}`);
+    const afterSaveUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(afterSaveUnload);
+    expect(afterSaveUnload.defaultPrevented).toBe(false);
+  });
+
+  it('locks editor controls and rejects direct edits and conflict actions while POST is pending', async () => {
+    storeDraft(PLACE_IDS.slice(0, 2));
+    const { harness, component, http } = await startPage('/plans/new');
+    const before = currentStoredDraft();
+
+    component.save();
+    const request = http.expectOne('/api/plans');
+    harness.detectChanges();
+
+    expect(harness.routeNativeElement?.querySelector<HTMLInputElement>('#plan-name')?.disabled).toBe(true);
+    expect(harness.routeNativeElement?.querySelector<HTMLSelectElement>('#plan-city')?.disabled).toBe(true);
+    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>(`button[aria-label="Move Place 1 down"]`)?.disabled)
+      .toBe(true);
+    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('button[aria-label="Remove Place 1"]')?.disabled)
+      .toBe(true);
+
+    component.onNameInput({ target: { value: 'Changed while saving' } } as unknown as Event);
+    component.onCitySelected({ target: { value: 'rotterdam' } } as unknown as Event);
+    component.movePlace(PLACE_IDS[0], 'down');
+    component.removePlace(PLACE_IDS[0]);
+    component.retryCatalog();
+    expect(component.draftStore.requestCityChange('rotterdam', 'Rotterdam')).toBe(false);
+    const conflictDuringSave = component.draftStore.cityConflict();
+    expect(conflictDuringSave?.cityId).toBe('rotterdam');
+    component.keepExistingDraft();
+    component.replaceDraftWithRequestedCity();
+
+    expect(currentStoredDraft()).toEqual(before);
+    expect(component.draftStore.cityConflict()).toBe(conflictDuringSave);
+    expect(request.cancelled).toBe(false);
+    http.expectNone((candidate) => candidate.url === '/api/places');
+    expect(component.confirmNavigationAway()).toBe(false);
+
+    request.flush({
+      type: 'about:blank',
+      title: 'Bad Request',
+      status: 400,
+      detail: 'The request was rejected.',
+    }, { status: 400, statusText: 'Bad Request' });
+    await harness.fixture.whenStable();
+
+    expect(currentStoredDraft()).toEqual(before);
+    expect(component.saving()).toBe(false);
+    expect(component.navigationMessage()).toBeNull();
+    expect(component.draftStore.cityConflict()).toBe(conflictDuringSave);
+    const afterFailureUnload = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(afterFailureUnload);
+    expect(afterFailureUnload.defaultPrevented).toBe(false);
   });
 
   it('keeps the exact draft after a validation rejection', async () => {

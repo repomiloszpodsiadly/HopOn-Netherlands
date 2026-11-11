@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, ViewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, distinctUntilChanged, filter, map, of, Subject, switchMap, tap } from 'rxjs';
@@ -49,6 +49,12 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
   private leaveResolver: ((allow: boolean) => void) | null = null;
   private leavePromise: Promise<boolean> | null = null;
   private allowNavigationAfterDelete = false;
+  private beforeUnloadAttached = false;
+  private readonly deletionConfirmed = signal(false);
+  private readonly handleBeforeUnload = (event: BeforeUnloadEvent): void => {
+    event.preventDefault();
+    event.returnValue = '';
+  };
 
   @ViewChild('deleteDialog') private readonly deleteDialog!: ConfirmDialogComponent;
   @ViewChild('discardDialog') private readonly discardDialog!: ConfirmDialogComponent;
@@ -101,6 +107,13 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
     && this.validationMessages().length === 0);
 
   constructor() {
+    effect(() => {
+      const shouldWarn = !this.deletionConfirmed()
+        && (this.dirty() || this.saving() || this.deleting());
+      this.syncBeforeUnloadListener(shouldWarn);
+    });
+    this.destroyRef.onDestroy(() => this.syncBeforeUnloadListener(false));
+
     this.catalogRequests
       .pipe(
         switchMap((cityId) => {
@@ -249,6 +262,7 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: () => {
+          this.deletionConfirmed.set(true);
           this.deleting.set(false);
           this.allowNavigationAfterDelete = true;
           this.deleteDialog.close();
@@ -298,6 +312,8 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
   }
 
   private beginLoad(id: string): void {
+    this.allowNavigationAfterDelete = false;
+    this.deletionConfirmed.set(false);
     this.routePlanId.set(id);
     this.loading.set(true);
     this.loadError.set(null);
@@ -393,6 +409,18 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
     this.leavePromise = null;
     this.discardDialog.close();
     resolve(allow);
+  }
+
+  private syncBeforeUnloadListener(shouldListen: boolean): void {
+    if (typeof window === 'undefined' || shouldListen === this.beforeUnloadAttached) {
+      return;
+    }
+    if (shouldListen) {
+      window.addEventListener('beforeunload', this.handleBeforeUnload);
+    } else {
+      window.removeEventListener('beforeunload', this.handleBeforeUnload);
+    }
+    this.beforeUnloadAttached = shouldListen;
   }
 }
 

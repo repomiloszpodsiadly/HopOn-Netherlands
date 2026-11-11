@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { catchError, finalize, map, of, Subject, switchMap } from 'rxjs';
@@ -11,6 +11,7 @@ import { PlanResponse, PlanUpsertRequest } from '../../core/models/plan.models';
 import { DraftPlan } from '../../core/models/draft-plan.models';
 import { DraftPlanStore } from '../../core/services/draft-plan.store';
 import { MainNavigationComponent } from '../shared/main-navigation';
+import { PlanCreateNavigationGuard } from './plan-create.guard';
 
 type CatalogResult = Readonly<{
   cityId: CityId;
@@ -31,7 +32,7 @@ const CITY_NAMES: Readonly<Record<CityId, string>> = {
   styleUrl: './plan-create-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
-export class PlanCreatePage {
+export class PlanCreatePage implements PlanCreateNavigationGuard {
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly destroyRef = inject(DestroyRef);
@@ -49,6 +50,9 @@ export class PlanCreatePage {
   readonly catalogError = signal<string | null>(null);
   readonly saving = signal(false);
   readonly createError = signal<string | null>(null);
+  readonly createSuccess = signal<string | null>(null);
+  readonly savedPlanId = signal<string | null>(null);
+  readonly navigationMessage = signal<string | null>(null);
   readonly unknownOutcome = signal(false);
 
   readonly currentCityId = computed(
@@ -103,10 +107,16 @@ export class PlanCreatePage {
   }
 
   onNameInput(event: Event): void {
+    if (this.saving()) {
+      return;
+    }
     this.draftStore.renameDraft((event.target as HTMLInputElement).value);
   }
 
   onCitySelected(event: Event): void {
+    if (this.saving()) {
+      return;
+    }
     const cityId = (event.target as HTMLSelectElement).value;
     if (!isCityId(cityId)) {
       return;
@@ -119,14 +129,23 @@ export class PlanCreatePage {
   }
 
   movePlace(placeId: string, direction: 'up' | 'down'): void {
+    if (this.saving()) {
+      return;
+    }
     this.draftStore.movePlace(placeId, direction);
   }
 
   removePlace(placeId: string): void {
+    if (this.saving()) {
+      return;
+    }
     this.draftStore.removePlace(placeId);
   }
 
   keepExistingDraft(): void {
+    if (this.saving()) {
+      return;
+    }
     this.draftStore.keepExistingDraft();
     const cityId = this.draftStore.draft()?.cityId;
     if (cityId !== undefined) {
@@ -135,6 +154,9 @@ export class PlanCreatePage {
   }
 
   replaceDraftWithRequestedCity(): void {
+    if (this.saving()) {
+      return;
+    }
     const conflict = this.draftStore.cityConflict();
     if (conflict === null || !this.draftStore.startDraftForRequestedCity()) {
       return;
@@ -149,6 +171,9 @@ export class PlanCreatePage {
   }
 
   retryCatalog(): void {
+    if (this.saving()) {
+      return;
+    }
     const cityId = this.draftStore.pendingCityId() ?? this.currentCityId();
     if (this.draftStore.pendingCityId() !== null) {
       this.draftStore.beginValidation();
@@ -165,19 +190,27 @@ export class PlanCreatePage {
       return;
     }
 
-    const request: PlanUpsertRequest = {
+    Object.freeze(draft.placeIds);
+    Object.freeze(draft);
+    const request: PlanUpsertRequest = Object.freeze({
       name: draft.name.trim(),
       cityId: draft.cityId,
-      placeIds: [...draft.placeIds],
-    };
+      placeIds: Object.freeze([...draft.placeIds]),
+    });
     this.createError.set(null);
+    this.createSuccess.set(null);
+    this.savedPlanId.set(null);
+    this.navigationMessage.set(null);
     this.unknownOutcome.set(false);
     this.saving.set(true);
 
     this.plansApi
       .createPlan(request)
       .pipe(
-        finalize(() => this.saving.set(false)),
+        finalize(() => {
+          this.saving.set(false);
+          this.navigationMessage.set(null);
+        }),
         takeUntilDestroyed(this.destroyRef),
       )
       .subscribe({
@@ -186,7 +219,28 @@ export class PlanCreatePage {
       });
   }
 
+  confirmNavigationAway(): boolean {
+    if (!this.saving()) {
+      return true;
+    }
+    this.navigationMessage.set('Saving in progress. Please wait for confirmation.');
+    return false;
+  }
+
+  @HostListener('window:beforeunload', ['$event'])
+  warnBeforeUnload(event: BeforeUnloadEvent): void {
+    if (!this.saving()) {
+      return;
+    }
+    event.preventDefault();
+    event.returnValue = '';
+  }
+
   private handleRouteCity(value: string | null): void {
+    if (this.saving()) {
+      this.navigationMessage.set('Saving in progress. Please wait for confirmation.');
+      return;
+    }
     const draftCityId = this.draftStore.pendingCityId() ?? this.draftStore.draft()?.cityId;
     const routeCityId = isCityId(value)
       ? value
@@ -311,7 +365,15 @@ export class PlanCreatePage {
       this.showCreateError(new UnexpectedPlanResponseError());
       return;
     }
-    this.draftStore.clearAfterSuccessfulSave(submittedDraft);
+
+    this.saving.set(false);
+    if (!this.draftStore.clearAfterSuccessfulSave(submittedDraft)) {
+      this.createSuccess.set(
+        'The submitted plan was saved. A newer unsaved tab draft remains and was not included in that save.',
+      );
+      this.savedPlanId.set(response.id);
+      return;
+    }
     void this.router.navigate(['/plans', response.id]);
   }
 

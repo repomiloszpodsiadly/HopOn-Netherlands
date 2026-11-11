@@ -1,7 +1,6 @@
 import { expect, test, type Page, type Response } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { mkdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 const openFreeMapStyleUrl = 'https://tiles.openfreemap.org/styles/liberty';
@@ -121,10 +120,10 @@ test('adds Discover places once, restores the tab draft, and asks before changin
   await expect(page.locator('.draft-feedback')).toContainText('Added');
   await addAll.click();
   await expect(page.locator('.draft-feedback')).toContainText('Already in plan');
-  await expect(page.locator('.draft-panel .section-heading span')).toHaveText(`${pickCount} PLACES`);
+  await expect(page.locator('.draft-count')).toContainText(`${pickCount} stops`);
 
   await page.reload();
-  await expect(page.locator('.draft-panel .section-heading span')).toHaveText(`${pickCount} PLACES`);
+  await expect(page.locator('.draft-count')).toContainText(`${pickCount} stops`);
 
   await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
   await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
@@ -142,7 +141,7 @@ test('adds Discover places once, restores the tab draft, and asks before changin
 
   await detailAddButton.click();
   await expect(page.locator('.draft-feedback')).toContainText('Already in plan');
-  await expect(page.locator('.draft-panel .section-heading span')).toHaveText('1 PLACE');
+  await expect(page.locator('.draft-count')).toContainText('1 stop');
 });
 
 test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', async ({ page }) => {
@@ -808,6 +807,128 @@ test('keeps saved plans usable at mobile widths with keyboard and browser histor
   }
 });
 
+test('captures the Saved Plans screens at every required viewport', async ({ page }) => {
+  test.setTimeout(120_000);
+  const screenshotsDirectory = join(process.cwd(), 'test-results', 'hop004-e-visual-review');
+  const viewports = [
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+    { width: 768, height: 1024 },
+    { width: 1024, height: 768 },
+    { width: 1440, height: 900 },
+  ];
+  const testPlanIds: string[] = [];
+  let testFailed = false;
+  await mkdir(screenshotsDirectory, { recursive: true });
+
+  try {
+    await page.route('**/api/plans', (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: '[]',
+    }));
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.goto('/plans');
+      await expect(page.locator('.plans-empty')).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({
+        path: join(screenshotsDirectory, `list-empty-${viewport.width}x${viewport.height}.png`),
+        fullPage: true,
+        style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+      });
+    }
+    await page.unroute('**/api/plans');
+
+    const places = await getActualPlaces(page, 'amsterdam');
+    const planName = 'A quiet day beside the canals';
+    const createResponse = await page.request.post('http://127.0.0.1:4300/api/plans', {
+      data: { name: planName, cityId: 'amsterdam', placeIds: places.slice(0, 3).map((place) => place.id) },
+    });
+    expect(createResponse.status()).toBe(201);
+    const created = await createResponse.json() as { id: string };
+    testPlanIds.push(created.id);
+    expect(planIdFromLocation(createResponse.headers()['location'])).toBe(created.id);
+
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.goto('/plans');
+      await expect(page.getByRole('link', { name: `Open ${planName} in Amsterdam` })).toBeVisible();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({
+        path: join(screenshotsDirectory, `list-populated-${viewport.width}x${viewport.height}.png`),
+        fullPage: true,
+        style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+      });
+    }
+
+    await seedTabDraft(page, {
+      cityId: 'amsterdam',
+      name: 'An afternoon of art and architecture',
+      placeIds: places.slice(0, 3).map((place) => place.id),
+      updatedAt: '2026-11-10T12:00:00.000Z',
+    });
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.goto('/plans/new?city=amsterdam');
+      await expect(page.locator('.editor-place')).toHaveCount(3);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({
+        path: join(screenshotsDirectory, `create-${viewport.width}x${viewport.height}.png`),
+        fullPage: true,
+        style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+      });
+    }
+
+    for (const viewport of viewports) {
+      await page.setViewportSize(viewport);
+      await page.goto(`/plans/${created.id}`);
+      await expect(page.locator('#saved-plan-name')).toHaveValue(planName);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({
+        path: join(screenshotsDirectory, `details-${viewport.width}x${viewport.height}.png`),
+        fullPage: true,
+        style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+      });
+
+      await page.locator('#saved-plan-name').fill(`${planName} edited`);
+      await page.locator('.details-topbar-link').click();
+      const discardDialog = page.locator('#discard-plan-edits');
+      await expect(discardDialog).toBeVisible();
+      await page.screenshot({
+        path: join(screenshotsDirectory, `discard-dialog-${viewport.width}x${viewport.height}.png`),
+        fullPage: false,
+      });
+      await discardDialog.getByRole('button', { name: 'Keep editing', exact: true }).click();
+      await expect(discardDialog).toBeHidden();
+      await page.locator('#saved-plan-name').fill(planName);
+
+      const deleteButton = page.getByRole('button', { name: 'Delete plan', exact: true });
+      await deleteButton.click();
+      const deleteDialog = page.locator('#delete-plan-confirmation');
+      await expect(deleteDialog).toBeVisible();
+      await expect(deleteDialog).toBeInViewport();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth))
+        .toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({
+        path: join(screenshotsDirectory, `delete-dialog-${viewport.width}x${viewport.height}.png`),
+        fullPage: false,
+      });
+      await deleteDialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await expect(deleteDialog).toBeHidden();
+    }
+  } catch (error) {
+    testFailed = true;
+    throw error;
+  } finally {
+    await cleanupCreatedPlans(page, testPlanIds, testFailed);
+  }
+});
+
 test('keeps search and tab draft usable when the OpenFreeMap style is unavailable', async ({ page }) => {
   test.setTimeout(20_000);
   await page.unroute('**/styles/liberty');
@@ -939,7 +1060,8 @@ test('keeps catalog selection usable after map tiles fail following style load',
 });
 
 test('fits mobile, tablet and desktop targets without horizontal overflow or covered attribution', async ({ page }) => {
-  const screenshotsDirectory = join(tmpdir(), 'hopon-visual-check');
+  test.setTimeout(240_000);
+  const screenshotsDirectory = join(process.cwd(), 'test-results', 'hop004-e-visual-review');
   await mkdir(screenshotsDirectory, { recursive: true });
   await page.goto('/');
   await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
@@ -955,6 +1077,10 @@ test('fits mobile, tablet and desktop targets without horizontal overflow or cov
     await expect(page.getByRole('combobox', { name: 'Choose a city' })).toBeVisible();
     await expect(page.locator('.filter-row')).toBeVisible();
     await expect(page.locator('.map-caption')).toContainText('Map style');
+    await expect.poll(async () => page.locator('.map-viewport__canvas').evaluate((mapHost) => {
+      const canvas = mapHost.querySelector('canvas');
+      return canvas === null ? 0 : Math.abs(mapHost.clientWidth - canvas.clientWidth);
+    })).toBeLessThanOrEqual(2);
 
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(documentWidth).toBeLessThanOrEqual(viewport.width);
@@ -967,10 +1093,68 @@ test('fits mobile, tablet and desktop targets without horizontal overflow or cov
       expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(navigationBox.y);
     }
 
+    const viewportLabel = `${viewport.width}x${viewport.height}`;
     await page.screenshot({
-      path: join(screenshotsDirectory, `viewport-${viewport.width}x${viewport.height}.png`),
+      path: join(screenshotsDirectory, `explore-amsterdam-${viewportLabel}.png`),
       fullPage: true,
+      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
     });
+
+    const citySelect = page.getByRole('combobox', { name: 'Choose a city' });
+    await citySelect.selectOption('rotterdam');
+    await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({
+      path: join(screenshotsDirectory, `explore-rotterdam-${viewportLabel}.png`),
+      fullPage: true,
+      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+    });
+
+    await citySelect.selectOption('amsterdam');
+    await expect(page.locator('.place-results__heading')).toContainText('AMSTERDAM');
+    const firstCard = page.locator('.place-card').first();
+    await firstCard.scrollIntoViewIfNeeded();
+    await firstCard.click();
+    await expect(page.locator('.place-detail')).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({
+      path: join(screenshotsDirectory, `selected-poi-${viewportLabel}.png`),
+      fullPage: false,
+    });
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.place-detail')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Architecture Hunt' }).click();
+    await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({
+      path: join(screenshotsDirectory, `discover-active-${viewportLabel}.png`),
+      fullPage: true,
+      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+    });
+
+    await page.unroute(openFreeMapStyleUrl);
+    await page.route(openFreeMapStyleUrl, (route) =>
+      route.fulfill({ status: 503, contentType: 'text/plain', body: 'Map unavailable for visual review' }),
+    );
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({
+      path: join(screenshotsDirectory, `map-unavailable-${viewportLabel}.png`),
+      fullPage: true,
+      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+    });
+    await page.unroute(openFreeMapStyleUrl);
+    await page.route(openFreeMapStyleUrl, (route) =>
+      route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(isolatedStyle) }),
+    );
+    await page.unroute('**/__e2e/glyphs/**');
+    await page.route('**/__e2e/glyphs/**', (route) =>
+      route.fulfill({ status: 200, contentType: 'application/x-protobuf', body: Buffer.alloc(0) }),
+    );
+    await page.reload();
+    await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
   }
 });
 

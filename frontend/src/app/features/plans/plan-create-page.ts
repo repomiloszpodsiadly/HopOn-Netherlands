@@ -29,7 +29,7 @@ const CITY_NAMES: Readonly<Record<CityId, string>> = {
   selector: 'app-plan-create-page',
   imports: [RouterLink, MainNavigationComponent],
   templateUrl: './plan-create-page.html',
-  styleUrl: './plan-create-page.css',
+  styleUrls: ['./plans-page.css', './plan-create-page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PlanCreatePage implements PlanCreateNavigationGuard {

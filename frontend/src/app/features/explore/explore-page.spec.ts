@@ -269,6 +269,32 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(45);
   });
 
+  it('shows the temporary draft count and keeps its city when linking to the editor', async () => {
+    const { harness, http, component } = await startPage('/?city=amsterdam');
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const count = harness.routeNativeElement?.querySelector('.draft-count');
+    const editorLink = harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement;
+    expect(count?.textContent).toContain('0');
+    expect(count?.textContent).toContain('stops');
+    expect(harness.routeNativeElement?.textContent).toContain('No stops yet');
+    expect(editorLink.getAttribute('href')).toBe('/plans/new?city=amsterdam');
+
+    component.draftStore.initializeDraft('amsterdam', 'Amsterdam');
+    component.draftStore.addPlaces('amsterdam', 'Amsterdam', ['amsterdam-museum'], AMSTERDAM_PLACES);
+    component.selectedCityId.set('rotterdam');
+    harness.detectChanges();
+
+    expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('1');
+    expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('stop');
+    expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft');
+    expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
+    expect((harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement)
+      .getAttribute('href')).toBe('/plans/new?city=amsterdam');
+  });
+
   it('opens the same place from a card or map marker and restores focus on Escape', async () => {
     const { harness, http } = await startPage('/?city=amsterdam');
     placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
@@ -345,12 +371,16 @@ describe('ExplorePage', () => {
     await harness.fixture.whenStable();
     harness.detectChanges();
 
+    const selectedTheme = Array.from(harness.routeNativeElement?.querySelectorAll('.discover-theme') ?? [])
+      .find((button) => button.textContent?.includes('Architecture Hunt')) as HTMLButtonElement;
+    expect(selectedTheme.getAttribute('aria-pressed')).toBe('true');
     const expectedIds = ['museumplein', 'van-gogh'];
     const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
     expect(component.discoverPlaceIds()).toEqual(expectedIds);
     expect(map.discoverPlaceIds).toEqual(expectedIds);
     expect(harness.routeNativeElement?.querySelectorAll('.place-card--discover')).toHaveLength(2);
-    expect(harness.routeNativeElement?.textContent).toContain('2 verified places highlighted');
+    expect(harness.routeNativeElement?.textContent).toContain('2 verified places in Amsterdam');
+    expect(harness.routeNativeElement?.querySelector('.discover-count')?.textContent).toContain('in Amsterdam');
 
     (harness.routeNativeElement?.querySelector('.discover-pick') as HTMLButtonElement).click();
     await harness.fixture.whenStable();
@@ -365,7 +395,7 @@ describe('ExplorePage', () => {
     addAll.click();
     expect(component.draftStore.draft()?.placeIds).toEqual(expectedIds);
     harness.detectChanges();
-    expect(harness.routeNativeElement?.textContent).toContain('not saved to server');
+    expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
     addAll.click();
     expect(component.draftFeedback()).toBe('Already in plan.');
   });
@@ -386,7 +416,7 @@ describe('ExplorePage', () => {
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(harness.routeNativeElement?.textContent).toContain('0 verified places highlighted');
+    expect(harness.routeNativeElement?.textContent).toContain('0 verified places in Amsterdam');
     expect(harness.routeNativeElement?.textContent).toContain('No verified places matched this theme');
     expect(harness.routeNativeElement?.querySelector('.discover-picks')).toBeNull();
   });

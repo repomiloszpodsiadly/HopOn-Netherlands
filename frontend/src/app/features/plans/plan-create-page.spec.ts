@@ -403,6 +403,9 @@ describe('PlanCreatePage', () => {
       placeIds: [...PLACE_IDS.slice(0, 2)],
     });
     expect(harness.routeNativeElement?.textContent).toContain('Keep the existing draft?');
+    expect(harness.routeNativeElement?.querySelector('[role="region"][aria-labelledby="plan-city-conflict-title"]'))
+      .toBeTruthy();
+    expect(harness.routeNativeElement?.querySelector('[aria-modal="true"]')).toBeNull();
     http.expectNone('/api/plans');
   });
 

@@ -50,6 +50,9 @@ describe('PlansListPage', () => {
   it('renders server ordering, city, place count and truthful date values', async () => {
     const { harness, component, request, http } = await startPage();
     expect(component.loading()).toBe(true);
+    expect(harness.routeNativeElement?.querySelector('main')?.getAttribute('aria-busy')).toBe('true');
+    expect(harness.routeNativeElement?.querySelector('[role="status"][aria-label="Loading saved plans"]'))
+      .toBeTruthy();
     request.flush([NEWER_PLAN, OLDER_PLAN]);
     await harness.fixture.whenStable();
     harness.detectChanges();
@@ -59,12 +62,16 @@ describe('PlansListPage', () => {
     expect(cards[0].textContent).toContain('Rotterdam by the water');
     expect(cards[0].textContent).toContain('Rotterdam');
     expect(cards[0].textContent).toContain('2 places');
+    expect(cards[0].querySelector('a')?.getAttribute('aria-label'))
+      .toBe('Open Rotterdam by the water in Rotterdam');
+    expect(cards[0].querySelectorAll('time')).toHaveLength(2);
     expect(cards[1].textContent).toContain('Amsterdam afternoon');
     expect(cards[1].textContent).toContain('1 place');
     expect(cards[0].querySelector('time')?.getAttribute('datetime')).toBe(NEWER_PLAN.createdAt);
     expect(harness.routeNativeElement?.querySelector('nav[aria-label="Main navigation"] a[href="/plans"]')
       ?.getAttribute('aria-current')).toBe('page');
     expect(component.plans()).toEqual([NEWER_PLAN, OLDER_PLAN]);
+    expect(harness.routeNativeElement?.querySelector('main')?.getAttribute('aria-busy')).toBe('false');
     http.expectNone('/api/plans/');
   });
 
@@ -75,6 +82,7 @@ describe('PlansListPage', () => {
     harness.detectChanges();
 
     expect(harness.routeNativeElement?.textContent).toContain('Your plan book is ready.');
+    expect(harness.routeNativeElement?.querySelector('h1')?.textContent).toContain('Saved Plans');
     expect(harness.routeNativeElement?.querySelector('.plans-empty a[href="/plans/new"]')?.textContent)
       .toContain('Start your first plan');
   });

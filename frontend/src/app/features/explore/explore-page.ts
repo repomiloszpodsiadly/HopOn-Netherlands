@@ -13,7 +13,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   catchError,
   distinctUntilChanged,
@@ -82,7 +82,7 @@ export function resolveCityId(value: string | null): CityId {
 
 @Component({
   selector: 'app-explore-page',
-  imports: [MapViewportComponent, PlaceDetailComponent, MainNavigationComponent],
+  imports: [MapViewportComponent, PlaceDetailComponent, MainNavigationComponent, RouterLink],
   templateUrl: './explore-page.html',
   styleUrl: './explore-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -163,6 +163,9 @@ export class ExplorePage {
   );
   readonly currentCityName = computed(
     () => this.currentCity()?.name ?? CITY_LABELS[this.selectedCityId()],
+  );
+  readonly draftEditorCityId = computed(
+    () => this.draftStore.draft()?.cityId ?? this.draftStore.pendingCityId() ?? this.selectedCityId(),
   );
   readonly selectedPlace = computed(() => {
     const selectedId = this.selectedPlaceId();

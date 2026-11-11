@@ -1,0 +1,29 @@
+<dialog
+  #dialog
+  class="confirm-dialog"
+  [id]="dialogId"
+  tabindex="-1"
+  aria-modal="true"
+  [attr.aria-labelledby]="dialogId + '-title'"
+  [attr.aria-describedby]="dialogId + '-description'"
+  (cancel)="handleCancel($event)"
+  (keydown)="handleKeydown($event)"
+  (click)="handleBackdropClick($event)"
+>
+  <section class="confirm-dialog__panel">
+    <p class="confirm-dialog__eyebrow">HOPON PLANS</p>
+    <h2 [id]="dialogId + '-title'">{{ title }}</h2>
+    <p [id]="dialogId + '-description'">{{ description }}</p>
+    @if (message) {
+      <p class="confirm-dialog__message" role="alert">{{ message }}</p>
+    }
+    <div class="confirm-dialog__actions">
+      <button #cancelButton class="confirm-dialog__button confirm-dialog__button--quiet" type="button" [disabled]="busy" (click)="cancel()">
+        {{ cancelLabel }}
+      </button>
+      <button class="confirm-dialog__button confirm-dialog__button--confirm" type="button" [disabled]="busy" (click)="confirm()">
+        {{ busy ? 'Please wait…' : confirmLabel }}
+      </button>
+    </div>
+  </section>
+</dialog>

@@ -19,7 +19,10 @@ function asProblemDetail(payload: unknown): ProblemDetailDto | null {
     'status' in payload &&
     typeof payload.status === 'number'
   ) {
-    return payload as ProblemDetailDto;
+    const detail = 'detail' in payload && typeof payload.detail === 'string'
+      ? payload.detail
+      : undefined;
+    return { status: payload.status, detail };
   }
   return null;
 }

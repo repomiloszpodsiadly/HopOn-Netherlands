@@ -1,0 +1,64 @@
+<div class="plans-shell plans-list-shell">
+  <header class="plans-topbar">
+    <a class="plans-brand" routerLink="/" aria-label="HopOn Netherlands home">
+      <span class="brand__symbol" aria-hidden="true"><span></span></span>
+      <span class="brand__wordmark">hopon<span>.</span></span>
+    </a>
+    <span class="plans-topbar__note">Your city days</span>
+  </header>
+
+  <main class="plans-main plans-list-main" aria-labelledby="saved-plans-title">
+    <div class="plans-list-heading">
+      <div>
+        <p class="plans-eyebrow">YOUR CITY DAYS</p>
+        <h1 id="saved-plans-title">Saved <em>Plans.</em></h1>
+        <p class="plans-intro">Your plans come from this running HopOn backend and stay available until it restarts.</p>
+      </div>
+      <a class="plans-button plans-button--primary" routerLink="/plans/new">Create a plan</a>
+    </div>
+
+    @if (loading()) {
+      <p class="plans-state" role="status">Loading your saved plans…</p>
+    } @else if (error(); as message) {
+      <section class="plans-state plans-state--error" role="alert">
+        <h2>Saved plans are unavailable</h2>
+        <p>{{ message }}</p>
+        <button class="plans-button plans-button--secondary" type="button" (click)="retry()">Try again</button>
+      </section>
+    } @else if (plans().length === 0) {
+      <section class="plans-empty">
+        <span class="plans-empty__mark" aria-hidden="true">✳</span>
+        <h2>Your plan book is ready.</h2>
+        <p>Save a day from Explore and it will appear here.</p>
+        <a class="plans-button plans-button--primary" routerLink="/plans/new">Start your first plan</a>
+      </section>
+    } @else {
+      <ul class="saved-plan-list" aria-label="Saved plans">
+        @for (plan of plans(); track plan.id) {
+          <li>
+            <article class="saved-plan-card">
+              <a class="saved-plan-card__open" [routerLink]="['/plans', plan.id]" [attr.aria-label]="'Open ' + plan.name + ' in ' + cityName(plan.cityId)">
+                <span class="saved-plan-card__city">{{ cityName(plan.cityId) }}</span>
+                <h2>{{ plan.name }}</h2>
+                <span class="saved-plan-card__count">{{ plan.placeIds.length }} {{ plan.placeIds.length === 1 ? 'place' : 'places' }}</span>
+              </a>
+              <dl class="saved-plan-card__dates">
+                <div>
+                  <dt>Created</dt>
+                  <dd><time [attr.datetime]="plan.createdAt">{{ formatDate(plan.createdAt) }}</time></dd>
+                </div>
+                <div>
+                  <dt>Updated</dt>
+                  <dd><time [attr.datetime]="plan.updatedAt">{{ formatDate(plan.updatedAt) }}</time></dd>
+                </div>
+              </dl>
+            </article>
+          </li>
+        }
+      </ul>
+    }
+  </main>
+
+  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Only the backend can create or change a saved plan.</span></footer>
+  <app-main-navigation />
+</div>

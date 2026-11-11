@@ -127,7 +127,6 @@ app-map-viewport { display: block; flex: 1; min-height: 0; }
 .map-caption__status > span { width: 6px; height: 6px; background: #78a88b; }
 .footer-note { display: flex; justify-content: space-between; gap: 15px; width: min(100%, 1500px); margin: 10px auto 0; padding-top: 10px; border-top: 1px solid var(--color-border); color: #8b9491; font-size: 10px; }
 .footer-note span:first-child { color: #626d6b; font-weight: 650; }
-.bottom-nav { display: none; }
 
 @keyframes skeleton-shine { to { background-position: -200% 0; } }
 @keyframes map-spin { to { transform: rotate(360deg); } }
@@ -177,11 +176,6 @@ app-map-viewport { display: block; flex: 1; min-height: 0; }
   .place-card { min-height: 80px; }
   .place-results__heading h2 { font-size: 22px; }
   .footer-note { flex-direction: column; gap: 6px; margin-bottom: 8px; }
-  .bottom-nav { position: fixed; z-index: 10; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, 1fr); padding: 7px 12px calc(7px + env(safe-area-inset-bottom)); border-top: 1px solid rgb(225 225 218 / 90%); background: rgb(250 249 246 / 94%); backdrop-filter: blur(14px); }
-  .bottom-nav__item { display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 4px; min-height: 52px; padding: 0; border: 0; background: none; color: #87918e; text-decoration: none; font-size: 11px; font-weight: 600; }
-  .bottom-nav__item svg { width: 19px; height: 19px; }
-  .bottom-nav__item--active { color: var(--color-primary); }
-  .bottom-nav__item:disabled { opacity: .5; }
 }
 
 @media (max-width: 390px) {

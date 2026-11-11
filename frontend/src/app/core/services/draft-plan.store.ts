@@ -26,6 +26,85 @@ export class DraftPlanStore {
     return this.pendingDraft?.cityId ?? null;
   }
 
+  initializeDraft(cityId: CityId, cityName: string): boolean {
+    if (this.pendingDraft !== null || this.draft() !== null || this.cityConflict() !== null) {
+      return false;
+    }
+    this.commit({
+      schemaVersion: 1,
+      cityId,
+      name: `${cityName} plan`,
+      placeIds: [],
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  renameDraft(name: string): boolean {
+    const existing = this.draft();
+    if (existing === null || this.pendingDraft !== null || existing.name === name) {
+      return false;
+    }
+    this.commit({ ...existing, name, updatedAt: new Date().toISOString() });
+    return true;
+  }
+
+  movePlace(placeId: string, direction: 'up' | 'down'): boolean {
+    const existing = this.draft();
+    if (existing === null || this.pendingDraft !== null) {
+      return false;
+    }
+    const currentIndex = existing.placeIds.indexOf(placeId);
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (currentIndex < 0 || targetIndex < 0 || targetIndex >= existing.placeIds.length) {
+      return false;
+    }
+    const placeIds = [...existing.placeIds];
+    [placeIds[currentIndex], placeIds[targetIndex]] = [placeIds[targetIndex], placeIds[currentIndex]];
+    this.commit({ ...existing, placeIds, updatedAt: new Date().toISOString() });
+    return true;
+  }
+
+  removePlace(placeId: string): boolean {
+    const existing = this.draft();
+    if (existing === null || this.pendingDraft !== null || !existing.placeIds.includes(placeId)) {
+      return false;
+    }
+    this.commit({
+      ...existing,
+      placeIds: existing.placeIds.filter((id) => id !== placeId),
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+
+  requestCityChange(cityId: CityId, cityName: string): boolean {
+    if (this.pendingDraft !== null || this.cityConflict() !== null) {
+      return false;
+    }
+    const existing = this.draft();
+    if (existing === null) {
+      return this.initializeDraft(cityId, cityName);
+    }
+    if (existing.cityId === cityId) {
+      return true;
+    }
+    this.cityConflict.set({ cityId, cityName, placeIds: [] });
+    return false;
+  }
+
+  clearAfterSuccessfulSave(expectedDraft: DraftPlan): boolean {
+    if (this.pendingDraft !== null || this.draft() !== expectedDraft) {
+      return false;
+    }
+    this.draft.set(null);
+    this.removeStoredDraft();
+    this.validationError.set(null);
+    this.restoreMessage.set(null);
+    this.cityConflict.set(null);
+    return true;
+  }
+
   beginValidation(): void {
     if (this.pendingDraft !== null) {
       this.isValidating.set(true);
@@ -127,6 +206,8 @@ export class DraftPlanStore {
       updatedAt: new Date().toISOString(),
     });
     this.cityConflict.set(null);
+    this.validationError.set(null);
+    this.restoreMessage.set(null);
     return true;
   }
 
@@ -196,7 +277,6 @@ function isDraftPlan(value: unknown): value is DraftPlan {
   return candidate['schemaVersion'] === 1
     && isCityId(candidate['cityId'] as string | undefined)
     && typeof candidate['name'] === 'string'
-    && candidate['name'].trim().length > 0
     && candidate['name'].length <= 80
     && Array.isArray(candidate['placeIds'])
     && candidate['placeIds'].every((placeId) => typeof placeId === 'string' && placeId.length > 0)

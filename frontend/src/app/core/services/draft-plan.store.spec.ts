@@ -62,6 +62,44 @@ describe('DraftPlanStore', () => {
     expect(store.draft()).toMatchObject({ cityId: 'rotterdam', placeIds: ['r1'] });
   });
 
+  it('persists empty drafts, renames, ordered edits, and guards successful-save cleanup', () => {
+    const store = TestBed.inject(DraftPlanStore);
+    expect(store.initializeDraft('amsterdam', 'Amsterdam')).toBe(true);
+    expect(store.draft()?.placeIds).toEqual([]);
+
+    store.addPlaces('amsterdam', 'Amsterdam', ['first', 'second'], [place('first'), place('second')]);
+    expect(store.renameDraft('')).toBe(true);
+    expect(store.movePlace('second', 'up')).toBe(true);
+    expect(store.draft()?.placeIds).toEqual(['second', 'first']);
+    expect(store.removePlace('first')).toBe(true);
+    expect(store.draft()?.placeIds).toEqual(['second']);
+
+    const submittedDraft = store.draft()!;
+    store.renameDraft('A newer edit');
+    expect(store.clearAfterSuccessfulSave(submittedDraft)).toBe(false);
+    expect(store.draft()?.name).toBe('A newer edit');
+    expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}').name).toBe('A newer edit');
+
+    expect(store.clearAfterSuccessfulSave(store.draft()!)).toBe(true);
+    expect(store.draft()).toBeNull();
+    expect(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY)).toBeNull();
+  });
+
+  it('restores a blank editor name as a valid tab draft state', () => {
+    sessionStorage.setItem(DRAFT_PLAN_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1,
+      cityId: 'utrecht',
+      name: '',
+      placeIds: [],
+      updatedAt: '2026-10-01T10:00:00.000Z',
+    }));
+    const store = TestBed.inject(DraftPlanStore);
+
+    expect(store.isValidating()).toBe(true);
+    expect(store.validatePendingDraft('utrecht', [])).toBe(true);
+    expect(store.draft()?.name).toBe('');
+  });
+
   it('restores a valid tab draft only after catalog IDs have been checked', () => {
     sessionStorage.setItem(DRAFT_PLAN_STORAGE_KEY, JSON.stringify({
       schemaVersion: 1,

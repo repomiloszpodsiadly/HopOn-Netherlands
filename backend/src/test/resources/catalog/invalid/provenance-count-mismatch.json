@@ -1,0 +1,15 @@
+{
+  "attribution": "© OpenStreetMap contributors",
+  "license": "Open Database License (ODbL) 1.0",
+  "licenseUrl": "https://www.openstreetmap.org/copyright",
+  "placeCounts": {
+    "amsterdam": 1436,
+    "rotterdam": 674,
+    "utrecht": 598
+  },
+  "curatedHubCounts": {
+    "amsterdam": 6,
+    "rotterdam": 6,
+    "utrecht": 6
+  }
+}

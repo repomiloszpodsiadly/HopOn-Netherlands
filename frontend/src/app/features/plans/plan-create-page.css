@@ -5,12 +5,16 @@
 
 .plan-editor-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: env(safe-area-inset-top) 32px 24px;
 }
 
 .editor-back,
 .editor-cancel,
 .editor-inline-link {
+  display: inline-flex;
+  min-height: var(--target-min);
+  align-items: center;
   color: var(--color-secondary);
   font-size: 14px;
   font-weight: 650;

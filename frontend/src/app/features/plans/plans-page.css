@@ -5,6 +5,7 @@
 
 .plans-shell {
   min-height: 100vh;
+  min-height: 100dvh;
   padding: env(safe-area-inset-top) 32px 24px;
 }
 
@@ -19,6 +20,7 @@
 .plans-brand {
   display: inline-flex;
   align-items: center;
+  min-height: var(--target-min);
   gap: 10px;
   color: var(--color-ink);
   text-decoration: none;
@@ -81,7 +83,7 @@
 .plans-eyebrow {
   margin: 0;
   color: var(--color-secondary);
-  font-size: 11px;
+  font-size: var(--text-caption);
   font-weight: 750;
   letter-spacing: 1.5px;
 }
@@ -138,6 +140,9 @@
 }
 
 .plans-back-link {
+  display: inline-flex;
+  min-height: var(--target-min);
+  align-items: center;
   color: var(--color-secondary);
   font-size: 14px;
   font-weight: 650;
@@ -515,7 +520,7 @@
   }
 
   .plans-topbar__note {
-    font-size: 11px;
+    font-size: var(--text-caption);
   }
 
   .plans-main h1 {

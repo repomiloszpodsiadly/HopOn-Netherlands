@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
@@ -18,7 +18,6 @@ const CITY_NAMES: Readonly<Record<CityId, string>> = {
   rotterdam: 'Rotterdam',
   utrecht: 'Utrecht',
 };
-const DEFAULT_CITY: CityId = 'amsterdam';
 
 @Component({
   selector: 'app-plans-list-page',
@@ -33,10 +32,6 @@ export class PlansListPage {
   private readonly reloadRequests = new Subject<void>();
 
   readonly plans = signal<readonly PlanResponse[]>([]);
-  readonly navigationCityId = computed<CityId>(() => {
-    const cityIds = new Set(this.plans().map((plan) => plan.cityId));
-    return cityIds.size === 1 ? cityIds.values().next().value ?? DEFAULT_CITY : DEFAULT_CITY;
-  });
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
 

@@ -47,7 +47,7 @@ type PlaceFeatureCollection = FeatureCollection<Point, PlaceFeatureProperties>;
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy {
-  @Input({ required: true }) city!: CityDto;
+  @Input({ required: true }) cities!: readonly CityDto[];
   @Input() places: readonly PlaceDto[] = [];
   @Input() selectedPlaceId: string | null = null;
   @Input() discoverPlaceIds: readonly string[] = [];
@@ -69,16 +69,21 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   private destroyed = false;
 
   ngAfterViewInit(): void {
-    this.createMap();
+    if (this.cities?.length > 0) {
+      this.createMap();
+    }
   }
 
   ngOnChanges(changes: SimpleChanges): void {
     const map = this.map;
     if (map === null) {
+      if (changes['cities'] !== undefined && this.cities?.length > 0) {
+        this.createMap();
+      }
       return;
     }
 
-    const cityChanged = changes['city'] !== undefined;
+    const citiesChanged = changes['cities'] !== undefined;
     const selectionChanged = changes['selectedPlaceId'] !== undefined;
     const placesChanged = changes['places'] !== undefined
       || selectionChanged
@@ -87,7 +92,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       && this.selectedPlaceId !== null
       && this.currentSelectedPlace() === null;
 
-    if (cityChanged || selectionChanged || selectionInvalidated) {
+    if (citiesChanged || selectionChanged || selectionInvalidated) {
       this.cameraOperation += 1;
       map.stop();
     }
@@ -99,11 +104,11 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     if (!this.mapReady()) {
       return;
     }
-    if (cityChanged) {
+    if (citiesChanged) {
       if (this.currentSelectedPlace() !== null) {
         this.scheduleSelectedPlaceFocus();
       } else {
-        this.moveToCity();
+        this.moveToAllCities();
       }
       return;
     }
@@ -139,7 +144,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private async createMap(): Promise<void> {
-    if (this.map !== null || this.city === undefined || this.destroyed) {
+    if (this.map !== null || this.cities === undefined || this.cities.length === 0 || this.destroyed) {
       return;
     }
 
@@ -162,8 +167,8 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       const map = new maplibre.Map({
         container: this.mapHost.nativeElement,
         style: OPENFREEMAP_STYLE,
-        center: [this.city.center.longitude, this.city.center.latitude],
-        zoom: this.city.defaultZoom,
+        center: [this.cities[0].center.longitude, this.cities[0].center.latitude],
+        zoom: 7,
         attributionControl: { compact: false },
       });
       this.map = map;
@@ -241,7 +246,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       if (this.currentSelectedPlace() !== null) {
         this.scheduleSelectedPlaceFocus();
       } else {
-        this.moveToCity();
+        this.moveToAllCities();
       }
     } catch {
       this.markUnavailable(map, generation);
@@ -307,17 +312,23 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     this.mapCleanup.push(() => map.off('mouseleave', PLACE_POINTS_LAYER_ID, onPlaceMouseLeave));
   }
 
-  private moveToCity(): void {
+  private moveToAllCities(): void {
     const map = this.map;
-    if (map === null) {
+    if (map === null || this.cities.length === 0) {
       return;
     }
+    const longitudes = this.cities.map((city) => city.center.longitude);
+    const latitudes = this.cities.map((city) => city.center.latitude);
+    const west = Math.min(...longitudes) - 0.13;
+    const east = Math.max(...longitudes) + 0.13;
+    const south = Math.min(...latitudes) - 0.08;
+    const north = Math.max(...latitudes) + 0.08;
     this.cameraOperation += 1;
     map.stop();
     this.resetMapPadding(map);
-    map.flyTo({
-      center: [this.city.center.longitude, this.city.center.latitude],
-      zoom: this.city.defaultZoom,
+    map.fitBounds([[west, south], [east, north]], {
+      padding: { top: 54, right: 54, bottom: 54, left: 54 },
+      maxZoom: 9.5,
       duration: this.prefersReducedMotion() ? 0 : 650,
     });
   }
@@ -357,7 +368,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     if (placeId === null) {
       return null;
     }
-    return this.places.find((place) => place.id === placeId && place.cityId === this.city.id) ?? null;
+    return this.places.find((place) => place.id === placeId) ?? null;
   }
 
   private selectedPlacePadding(): PaddingOptions {

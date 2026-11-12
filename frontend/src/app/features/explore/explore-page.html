@@ -1,54 +1,18 @@
 <div class="site-shell" id="top">
-  <header class="topbar">
-    <a class="brand" href="#top" aria-label="HopOn Netherlands home">
-      <span class="brand__symbol" aria-hidden="true"><span></span></span>
-      <span class="brand__wordmark">hopon<span>.</span></span>
-    </a>
-
-    <div class="topbar__right">
-      <div
-        class="api-status"
-        [class.api-status--online]="apiState() === 'online'"
-        [class.api-status--offline]="apiState() === 'offline'"
-        [class.api-status--unexpected]="apiState() === 'unexpected'"
-        role="status"
-        aria-live="polite"
-        aria-atomic="true"
-      >
-        <span class="api-status__dot" aria-hidden="true"></span>
-        <span class="api-status__text--desktop">{{ apiStatusText() }}</span>
-        <span class="api-status__text--compact">{{ compactApiStatusText() }}</span>
-        @if (apiState() === 'offline' || apiState() === 'unexpected') {
-          <button class="api-status__retry" type="button" (click)="retryHealthCheck()">Retry</button>
-        }
-      </div>
-
-      <label class="city-select" for="city-select">
-        <span class="city-select__pin" aria-hidden="true">
-          <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
-        </span>
-        <select
-          id="city-select"
-          [value]="selectedCityId()"
-          [disabled]="citiesLoading() || cities().length === 0"
-          (change)="onCitySelected($event)"
-          aria-label="Choose a city"
-        >
-          @for (city of cities(); track city.id) {
-            <option [value]="city.id">{{ city.name }}</option>
-          }
-        </select>
-        <span class="city-select__chevron" aria-hidden="true">⌄</span>
-      </label>
-      <span class="avatar" aria-hidden="true">H</span>
+  @if (apiState() === 'offline' || apiState() === 'unexpected') {
+    <div class="api-alert" role="status" aria-live="polite">
+      <span class="api-status__dot" aria-hidden="true"></span>
+      <span>{{ apiStatusText() }}</span>
+      <button class="api-status__retry" type="button" (click)="retryHealthCheck()">Retry connection</button>
     </div>
-  </header>
+  }
 
   <main class="workspace">
+    <div class="explore-sidebar">
     <section class="discovery" aria-labelledby="welcome-title">
       <div class="eyebrow"><span class="eyebrow__line" aria-hidden="true"></span>A little more local</div>
       <h1 id="welcome-title">Find your own<br /><em>way around.</em></h1>
-      <p class="intro">A thoughtful guide to the places, corners and small discoveries that make a Dutch city feel like yours.</p>
+      <p class="intro">Local places and small discoveries across three Dutch cities.</p>
 
       <label class="search-box" for="place-search">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
@@ -61,10 +25,18 @@
           aria-describedby="search-note"
         />
       </label>
-      <p class="control-note" id="search-note">Search place names in {{ currentCityName() }}.</p>
+      <p class="control-note" id="search-note">Search across Amsterdam, Rotterdam and Utrecht.</p>
 
+      <div class="city-scope" aria-label="Cities included in the guide">
+        <span class="city-scope__count">3 cities</span>
+        <span class="city-scope__names">Amsterdam <i></i> Rotterdam <i></i> Utrecht</span>
+      </div>
+
+    </section>
+
+    <section class="category-panel" aria-labelledby="category-title">
       <div class="section-heading">
-        <h2>Explore by type</h2>
+        <h2 id="category-title">Explore by type</h2>
         <span>REAL PLACES</span>
       </div>
       <div class="filter-row" role="group" aria-label="Filter places by category">
@@ -83,13 +55,12 @@
       @if (hasActiveFilters()) {
         <button class="clear-filters" type="button" (click)="clearFilters()">Clear filters</button>
       }
-
     </section>
 
     <section class="discover-panel" aria-labelledby="discover-title">
       <div class="section-heading">
         <h2 id="discover-title">Discover by vibe</h2>
-        <span>{{ currentCityName() }} &#183; VERIFIED CATALOG</span>
+        <span>THREE CITY CATALOG</span>
       </div>
       <div class="discover-themes" role="group" aria-label="Choose a discovery theme">
         @for (theme of discoverThemes; track theme.value) {
@@ -109,44 +80,47 @@
       @if (activeDiscoverTheme(); as theme) {
         <div class="discover-results" [attr.aria-busy]="discoverState() === 'loading'">
           @if (discoverState() === 'loading') {
-            <p class="discover-message" role="status">Finding {{ theme }} places in {{ currentCityName() }}&#8230;</p>
+            <p class="discover-message" role="status">Finding {{ theme }} picks across all three cities&#8230;</p>
           } @else if (discoverState() === 'error') {
             <div class="discover-error" role="alert">
               <p>{{ discoverError() }}</p>
               <button class="text-button" type="button" (click)="retryDiscover()">Retry</button>
             </div>
-          } @else if (discoverResponse(); as response) {
-            <p class="discover-description">{{ response.description }}</p>
-            <p class="discover-count" role="status">
-              {{ discoverPlaces().length }} verified place{{ discoverPlaces().length === 1 ? '' : 's' }} in {{ currentCityName() }}
-            </p>
-            @if (discoverPlaces().length === 0) {
-              <p class="discover-message">No verified places matched this theme in {{ currentCityName() }}.</p>
-            } @else {
-              <ul class="discover-picks" [attr.aria-label]="'Verified ' + theme + ' places in ' + currentCityName()">
-                @for (place of discoverPlaces(); track place.id) {
-                  <li>
-                    <button
-                      type="button"
-                      class="discover-pick"
-                      (click)="selectDiscoverPlace(place.id, $event.currentTarget)"
-                    >
-                      <span class="discover-pick__name">{{ place.name }}</span>
-                      <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
-                    </button>
-                  </li>
+          } @else {
+            @if (discoverWarning(); as warning) {
+              <p class="discover-warning" role="status">{{ warning }}</p>
+            }
+            @for (group of discoverGroups(); track group.cityId) {
+              <section class="discover-city-group" [attr.aria-label]="'Discover picks in ' + cityName(group.cityId)">
+                <div class="discover-city-group__heading">
+                  <h3>{{ cityName(group.cityId) }}</h3>
+                  @if (group.error === null) {
+                    <span>{{ group.placeIds.length }} picks</span>
+                  }
+                </div>
+                @if (group.error; as groupError) {
+                  <p class="discover-message" role="status">{{ groupError }}</p>
+                } @else if (group.placeIds.length === 0) {
+                  <p class="discover-message">No verified places matched this theme here.</p>
+                } @else {
+                  <p class="discover-description">{{ group.description }}</p>
+                  <ul class="discover-picks">
+                    @for (placeId of group.placeIds; track placeId) {
+                      @if (discoverPlacesById(placeId); as place) {
+                        <li>
+                          <button type="button" class="discover-pick" (click)="selectDiscoverPlace(place.id, $event.currentTarget)">
+                            <span class="discover-pick__name">{{ place.name }}</span>
+                            <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
+                          </button>
+                        </li>
+                      }
+                    }
+                  </ul>
+                  <button class="button button--secondary discover-add" type="button" (click)="addDiscoverSelection(group.cityId, $event.currentTarget)">
+                    Add {{ cityName(group.cityId) }} picks to plan
+                  </button>
                 }
-              </ul>
-              <button
-                class="button button--secondary discover-add"
-                type="button"
-                (click)="addDiscoverSelection($event.currentTarget)"
-              >
-                Add all to plan
-              </button>
-              @if (discoverVisibleCount() < discoverPlaces().length) {
-                <p class="discover-filter-note">Clear search or category filters to show every pick on the map.</p>
-              }
+              </section>
             }
           }
         </div>
@@ -154,23 +128,54 @@
     </section>
 
 
+    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
+      <div class="place-results__heading">
+        <div>
+          <p class="eyebrow eyebrow--small">THREE CITIES &#183; ONE GUIDE</p>
+          <h2 id="places-title">Places to explore</h2>
+        </div>
+        @if (placesLoading()) {
+          <span class="result-count" role="status">Loading places</span>
+        } @else {
+          <span class="result-count" aria-live="polite">{{ resultCountLabel() }}</span>
+        }
+      </div>
+
+      <app-place-results-list
+        [view]="placeResultsView()"
+        (placeSelected)="selectPlace($event.placeId, $event.trigger)"
+        (retryRequested)="retryPlaces()"
+        (clearFiltersRequested)="clearFilters()"
+        (showMoreRequested)="showMorePlaces()"
+      />
+    </section>
+    </div>
+
+    <div class="map-column">
     <section
       class="explore-main"
       id="map-region"
       tabindex="-1"
-      [attr.aria-label]="'Map and places in ' + currentCityName()"
+      aria-label="Map and places across Amsterdam, Rotterdam and Utrecht"
     >
       <div class="explore-main__heading">
         <div>
-          <p class="eyebrow eyebrow--small">YOUR NEXT GOOD DAY</p>
-          <h2>{{ currentCityName() }} <span>·</span> at a glance</h2>
+            <p class="eyebrow eyebrow--small">YOUR NEXT GOOD DAY</p>
+            <h2>Three cities <span>·</span> one map</h2>
         </div>
-        <span class="ready-tag"><span aria-hidden="true"></span>Verified city guide</span>
+          <span class="ready-tag"><span aria-hidden="true"></span>{{ places().length }} places</span>
       </div>
 
-      @if (currentCity(); as city) {
+      @if (placesWarning(); as warning) {
+        <div class="catalog-warning catalog-warning--map" role="status">
+          <span>{{ warning }}</span>
+          <button class="text-button" type="button" (click)="retryPlaces()">Retry</button>
+        </div>
+      }
+
+      @if (cities().length === cityIds.length) {
         <app-map-viewport
-          [city]="city"
+          [cities]="cities()"
           [places]="filteredPlaces()"
           [selectedPlaceId]="selectedPlaceId()"
           [discoverPlaceIds]="discoverPlaceIds()"
@@ -198,7 +203,7 @@
       @if (selectedPlace(); as place) {
         <app-place-detail
           [place]="place"
-          [cityName]="currentCityName()"
+          [cityName]="cityName(place.cityId)"
           [categoryLabel]="categoryLabels[place.category]"
           [nearbyHubs]="nearbyHubs()"
           [hubsLoading]="hubsLoading()"
@@ -233,7 +238,7 @@
         <p class="draft-name">{{ draft.name }}</p>
         <p class="draft-copy">Temporary tab draft for {{ draftCityName() }} &middot; not saved to the server.</p>
       } @else {
-        <p class="draft-copy">No stops yet for {{ currentCityName() }}. Start a tab draft from Explore or Discover, then review it before saving.</p>
+        <p class="draft-copy">Plan a day in one city.</p>
       }
       @if (draftStore.storageUnavailable()) {
         <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
@@ -266,28 +271,7 @@
         {{ draftStore.draft() ? 'Review and save draft' : 'Start a day plan' }}
       </a>
     </aside>
-
-    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
-      <div class="place-results__heading">
-        <div>
-          <p class="eyebrow eyebrow--small">{{ currentCityName().toUpperCase() }}</p>
-          <h2 id="places-title">Places to explore</h2>
-        </div>
-        @if (placesLoading()) {
-          <span class="result-count" role="status">Loading places</span>
-        } @else {
-          <span class="result-count" aria-live="polite">{{ resultCountLabel() }}</span>
-        }
-      </div>
-
-      <app-place-results-list
-        [view]="placeResultsView()"
-        (placeSelected)="selectPlace($event.placeId, $event.trigger)"
-        (retryRequested)="retryPlaces()"
-        (clearFiltersRequested)="clearFilters()"
-        (showMoreRequested)="showMorePlaces()"
-      />
-    </section>
+    </div>
 
   </main>
 
@@ -296,5 +280,5 @@
     <span>Browse independently; map availability depends on your connection.</span>
   </footer>
 
-  <app-main-navigation [cityId]="selectedCityId()" />
+  <app-main-navigation />
 </div>

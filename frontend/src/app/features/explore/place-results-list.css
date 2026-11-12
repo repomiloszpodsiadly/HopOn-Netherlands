@@ -9,17 +9,18 @@
   gap: 0;
   padding: 0;
   border: 1px solid var(--color-border);
-  border-radius: 15px;
+  border-radius: 19px;
   background: #fff;
+  box-shadow: 0 4px 16px rgb(23 37 40 / 3%);
   color: inherit;
   text-align: left;
   cursor: pointer;
   transition: border-color 120ms ease, background-color 120ms ease, box-shadow 120ms ease;
 }
-.place-card:hover { border-color: #a9c3bb; background: #fff; box-shadow: 0 3px 12px rgb(23 37 40 / 6%); }
+.place-card:hover { transform: translateY(-1px); border-color: #a9c3bb; background: #fff; box-shadow: 0 8px 22px rgb(23 37 40 / 8%); }
 .place-card--discover:not(.place-card--selected) { border-color: #ddc58f; background: #fffdf7; }
 .place-card--selected { border-color: var(--color-primary); background: #fffaf7; box-shadow: 0 0 0 2px rgb(217 104 67 / 12%); }
-.place-card--featured { display: grid; overflow: hidden; }
+.place-card--featured { display: grid; overflow: hidden; border-radius: 22px; }
 .place-card__image { display: block; width: 100%; height: auto; aspect-ratio: 2 / 1; object-fit: cover; }
 .place-card__body { display: flex; width: 100%; align-items: flex-start; gap: 12px; padding: 13px 12px; }
 .place-card--featured .place-card__body { padding: 11px 12px; }
@@ -63,4 +64,11 @@
 
 @media (max-width: 760px) {
   .place-card { min-height: 80px; }
+}
+
+@media (min-width: 1101px) {
+  .place-card--featured { display: flex; }
+  .place-card--featured .place-card__image { width: 58px; min-width: 58px; height: auto; align-self: stretch; aspect-ratio: auto; object-fit: cover; }
+  .place-card--featured .place-card__body { width: auto; flex: 1; padding: 7px; }
+  .place-card__tags { display: none; }
 }

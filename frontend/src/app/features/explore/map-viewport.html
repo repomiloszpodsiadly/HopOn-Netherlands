@@ -3,6 +3,8 @@
     #mapHost
     class="map-viewport__canvas"
     [class.map-viewport__canvas--hidden]="mapUnavailable()"
+    [attr.data-map-ready]="mapReady()"
+    [attr.data-map-places-ready]="placesRendered()"
     role="region"
     tabindex="-1"
     [attr.aria-label]="'Interactive map of ' + city.name"

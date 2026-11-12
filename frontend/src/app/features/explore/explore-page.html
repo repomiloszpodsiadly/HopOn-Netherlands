@@ -84,195 +84,75 @@
         <button class="clear-filters" type="button" (click)="clearFilters()">Clear filters</button>
       }
 
-      <section class="discover-panel" aria-labelledby="discover-title">
-        <div class="section-heading">
-          <h2 id="discover-title">Discover by vibe</h2>
-          <span>FROM THIS CATALOG</span>
-        </div>
-        <div class="discover-themes" role="group" aria-label="Choose a discovery theme">
-          @for (theme of discoverThemes; track theme.value) {
-            <button
-              type="button"
-              class="discover-theme"
-              [class.discover-theme--selected]="activeDiscoverTheme() === theme.value"
-              [attr.aria-pressed]="activeDiscoverTheme() === theme.value"
-              [disabled]="placesLoading() || placesError() !== null"
-              (click)="chooseDiscoverTheme(theme.value)"
-            >
-              {{ theme.label }}
-            </button>
-          }
-        </div>
-
-        @if (activeDiscoverTheme(); as theme) {
-          <div class="discover-results" [attr.aria-busy]="discoverState() === 'loading'">
-            @if (discoverState() === 'loading') {
-              <p class="discover-message" role="status">Finding {{ theme }} places in {{ currentCityName() }}&#8230;</p>
-            } @else if (discoverState() === 'error') {
-              <div class="discover-error" role="alert">
-                <p>{{ discoverError() }}</p>
-                <button class="text-button" type="button" (click)="retryDiscover()">Retry</button>
-              </div>
-            } @else if (discoverResponse(); as response) {
-              <p class="discover-description">{{ response.description }}</p>
-              <p class="discover-count" role="status">
-                {{ discoverPlaces().length }} verified place{{ discoverPlaces().length === 1 ? '' : 's' }} highlighted
-              </p>
-              @if (discoverPlaces().length === 0) {
-                <p class="discover-message">No verified places matched this theme in {{ currentCityName() }}.</p>
-              } @else {
-                <ul class="discover-picks" aria-label="Verified places selected for this theme">
-                  @for (place of discoverPlaces(); track place.id) {
-                    <li>
-                      <button
-                        type="button"
-                        class="discover-pick"
-                        (click)="selectDiscoverPlace(place.id, $event.currentTarget)"
-                      >
-                        <span class="discover-pick__name">{{ place.name }}</span>
-                        <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
-                      </button>
-                    </li>
-                  }
-                </ul>
-                <button
-                  class="button button--secondary discover-add"
-                  type="button"
-                  (click)="addDiscoverSelection($event.currentTarget)"
-                >
-                  Add all to plan
-                </button>
-                @if (discoverVisibleCount() < discoverPlaces().length) {
-                  <p class="discover-filter-note">Clear search or category filters to show every pick on the map.</p>
-                }
-              }
-            }
-          </div>
-        }
-      </section>
-
-      <aside class="draft-panel" aria-labelledby="draft-panel-title">
-        <div class="section-heading">
-          <h2 id="draft-panel-title">Your day, taking shape</h2>
-          @if (draftStore.draft(); as draft) {
-            <span>{{ draft.placeIds.length }} {{ draft.placeIds.length === 1 ? 'PLACE' : 'PLACES' }}</span>
-          }
-        </div>
-        @if (draftStore.isValidating()) {
-          <p class="draft-copy" role="status">Checking places in this tab&#8217;s draft&#8230;</p>
-        } @else if (draftStore.validationError(); as validationError) {
-          <div class="draft-error" role="alert">
-            <p>{{ validationError }}</p>
-            <button class="text-button" type="button" (click)="retryDraftValidation()">Retry validation</button>
-          </div>
-        } @else if (draftStore.draft(); as draft) {
-          <p class="draft-name">{{ draft.name }}</p>
-          <p class="draft-copy">Tab draft only · not saved to server.</p>
-        } @else {
-          <p class="draft-copy">Add a place or a Discover selection to start a tab draft.</p>
-        }
-        @if (draftStore.storageUnavailable()) {
-          <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
-        }
-        @if (draftStore.restoreMessage(); as restoreMessage) {
-          <p class="draft-copy draft-copy--warning" role="status">{{ restoreMessage }}</p>
-        }
-        @if (draftFeedback()) {
-          <p class="draft-feedback" role="status" aria-live="polite">{{ draftFeedback() }}</p>
-        }
-        @if (draftStore.cityConflict(); as conflict) {
-          <section class="draft-conflict" role="region" aria-labelledby="draft-conflict-title">
-            <h3 #draftConflictHeading id="draft-conflict-title" tabindex="-1">Keep the existing draft?</h3>
-            <p>
-              This tab has a {{ draftStore.draft()?.cityId }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?
-            </p>
-            <div class="draft-conflict__actions">
-              <button class="button button--secondary" type="button" (click)="keepExistingDraft()">Keep existing</button>
-              <button class="button button--primary" type="button" (click)="startDraftForCurrentCity()">
-                Start new for {{ conflict.cityName }}
-              </button>
-            </div>
-          </section>
-        }
-      </aside>
-
     </section>
 
-    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
-      <div class="place-results__heading">
-        <div>
-          <p class="eyebrow eyebrow--small">{{ currentCityName().toUpperCase() }}</p>
-          <h2 id="places-title">Places to explore</h2>
-        </div>
-        @if (placesLoading()) {
-          <span class="result-count" role="status">Loading…</span>
-        } @else {
-          <span class="result-count" aria-live="polite">{{ resultCount() }} places</span>
+    <section class="discover-panel" aria-labelledby="discover-title">
+      <div class="section-heading">
+        <h2 id="discover-title">Discover by vibe</h2>
+        <span>{{ currentCityName() }} &#183; VERIFIED CATALOG</span>
+      </div>
+      <div class="discover-themes" role="group" aria-label="Choose a discovery theme">
+        @for (theme of discoverThemes; track theme.value) {
+          <button
+            type="button"
+            class="discover-theme"
+            [class.discover-theme--selected]="activeDiscoverTheme() === theme.value"
+            [attr.aria-pressed]="activeDiscoverTheme() === theme.value"
+            [disabled]="placesLoading() || placesError() !== null"
+            (click)="chooseDiscoverTheme(theme.value)"
+          >
+            {{ theme.label }}
+          </button>
         }
       </div>
 
-      @if (placesLoading()) {
-        <div class="place-skeleton-list" role="status" aria-label="Loading places">
-          @for (item of [1, 2, 3, 4]; track item) {
-            <div class="place-skeleton" aria-hidden="true">
-              <span></span><span></span><span></span>
+      @if (activeDiscoverTheme(); as theme) {
+        <div class="discover-results" [attr.aria-busy]="discoverState() === 'loading'">
+          @if (discoverState() === 'loading') {
+            <p class="discover-message" role="status">Finding {{ theme }} places in {{ currentCityName() }}&#8230;</p>
+          } @else if (discoverState() === 'error') {
+            <div class="discover-error" role="alert">
+              <p>{{ discoverError() }}</p>
+              <button class="text-button" type="button" (click)="retryDiscover()">Retry</button>
             </div>
+          } @else if (discoverResponse(); as response) {
+            <p class="discover-description">{{ response.description }}</p>
+            <p class="discover-count" role="status">
+              {{ discoverPlaces().length }} verified place{{ discoverPlaces().length === 1 ? '' : 's' }} in {{ currentCityName() }}
+            </p>
+            @if (discoverPlaces().length === 0) {
+              <p class="discover-message">No verified places matched this theme in {{ currentCityName() }}.</p>
+            } @else {
+              <ul class="discover-picks" [attr.aria-label]="'Verified ' + theme + ' places in ' + currentCityName()">
+                @for (place of discoverPlaces(); track place.id) {
+                  <li>
+                    <button
+                      type="button"
+                      class="discover-pick"
+                      (click)="selectDiscoverPlace(place.id, $event.currentTarget)"
+                    >
+                      <span class="discover-pick__name">{{ place.name }}</span>
+                      <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
+                    </button>
+                  </li>
+                }
+              </ul>
+              <button
+                class="button button--secondary discover-add"
+                type="button"
+                (click)="addDiscoverSelection($event.currentTarget)"
+              >
+                Add all to plan
+              </button>
+              @if (discoverVisibleCount() < discoverPlaces().length) {
+                <p class="discover-filter-note">Clear search or category filters to show every pick on the map.</p>
+              }
+            }
           }
         </div>
-      } @else if (placesError(); as error) {
-        <div class="state-card state-card--error" role="alert">
-          <span class="state-card__icon" aria-hidden="true">!</span>
-          <h3>Could not load places</h3>
-          <p>{{ error }}</p>
-          <button class="button button--primary" type="button" (click)="retryPlaces()">Retry</button>
-        </div>
-      } @else if (resultCount() === 0) {
-        <div class="state-card" role="status">
-          <span class="state-card__icon" aria-hidden="true">⌕</span>
-          <h3>No places found</h3>
-          <p>Try a different search or clear your filters.</p>
-          @if (hasActiveFilters()) {
-            <button class="button button--secondary" type="button" (click)="clearFilters()">Clear filters</button>
-          }
-        </div>
-      } @else {
-        <div class="place-list" aria-label="Places in {{ currentCityName() }}">
-          @for (place of visiblePlaces(); track place.id) {
-            <button
-              class="place-card"
-              [class.place-card--selected]="selectedPlaceId() === place.id"
-              [class.place-card--discover]="discoverPlaceIds().includes(place.id)"
-              [attr.aria-pressed]="selectedPlaceId() === place.id"
-              type="button"
-              (click)="selectPlace(place.id, $event.currentTarget)"
-            >
-              <span class="place-card__marker" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
-              </span>
-              <span class="place-card__content">
-                <span class="place-card__eyebrow">{{ categoryLabels[place.category] }}</span>
-                <span class="place-card__name">{{ place.name }}</span>
-                <span class="place-card__description">{{ place.shortDescription }}</span>
-                  @if (discoverPlaceIds().includes(place.id)) {
-                    <span class="place-card__discover-tag">Discover pick</span>
-                  }
-                <span class="place-card__tags">
-                  @for (tag of place.tags.slice(0, 2); track tag) {
-                    <span>{{ displayTag(tag) }}</span>
-                  }
-                </span>
-              </span>
-            </button>
-          }
-        </div>
-        @if (hasMorePlaces()) {
-          <button class="show-more" type="button" (click)="showMorePlaces()">
-            Show more places
-            <span>({{ resultCount() - visiblePlaceLimit() }} remaining)</span>
-          </button>
-        }
       }
     </section>
+
 
     <section
       class="explore-main"
@@ -330,6 +210,85 @@
         />
       }
     </section>
+
+    <aside class="draft-panel" aria-labelledby="draft-panel-title">
+      <div class="draft-panel__heading">
+        <div>
+          <p class="draft-panel__eyebrow">YOUR PLAN</p>
+          <h2 id="draft-panel-title">Your day, taking shape</h2>
+        </div>
+        <span class="draft-count" role="status" aria-live="polite">
+          {{ draftStore.draft()?.placeIds.length ?? 0 }}
+          {{ draftStore.draft()?.placeIds.length === 1 ? 'stop' : 'stops' }}
+        </span>
+      </div>
+      @if (draftStore.isValidating()) {
+        <p class="draft-copy" role="status">Checking places in this tab&#8217;s draft&#8230;</p>
+      } @else if (draftStore.validationError(); as validationError) {
+        <div class="draft-error" role="alert">
+          <p>{{ validationError }}</p>
+          <button class="text-button" type="button" (click)="retryDraftValidation()">Retry validation</button>
+        </div>
+      } @else if (draftStore.draft(); as draft) {
+        <p class="draft-name">{{ draft.name }}</p>
+        <p class="draft-copy">Temporary tab draft for {{ draftCityName() }} &middot; not saved to the server.</p>
+      } @else {
+        <p class="draft-copy">No stops yet for {{ currentCityName() }}. Start a tab draft from Explore or Discover, then review it before saving.</p>
+      }
+      @if (draftStore.storageUnavailable()) {
+        <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
+      }
+      @if (draftStore.restoreMessage(); as restoreMessage) {
+        <p class="draft-copy draft-copy--warning" role="status">{{ restoreMessage }}</p>
+      }
+      @if (draftFeedback()) {
+        <p class="draft-feedback" role="status" aria-live="polite">{{ draftFeedback() }}</p>
+      }
+      @if (draftStore.cityConflict(); as conflict) {
+        <section class="draft-conflict" role="region" aria-labelledby="draft-conflict-title">
+          <h3 #draftConflictHeading id="draft-conflict-title" tabindex="-1">Keep the existing draft?</h3>
+          <p>
+            This tab has a {{ draftCityName() }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?
+          </p>
+          <div class="draft-conflict__actions">
+            <button class="button button--secondary" type="button" (click)="keepExistingDraft()">Keep existing</button>
+            <button class="button button--primary" type="button" (click)="startDraftForCurrentCity()">
+              Start new for {{ conflict.cityName }}
+            </button>
+          </div>
+        </section>
+      }
+      <a
+        class="draft-editor-link"
+        [routerLink]="['/plans/new']"
+        [queryParams]="{ city: draftEditorCityId() }"
+      >
+        {{ draftStore.draft() ? 'Review and save draft' : 'Start a day plan' }}
+      </a>
+    </aside>
+
+    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
+      <div class="place-results__heading">
+        <div>
+          <p class="eyebrow eyebrow--small">{{ currentCityName().toUpperCase() }}</p>
+          <h2 id="places-title">Places to explore</h2>
+        </div>
+        @if (placesLoading()) {
+          <span class="result-count" role="status">Loading places</span>
+        } @else {
+          <span class="result-count" aria-live="polite">{{ resultCountLabel() }}</span>
+        }
+      </div>
+
+      <app-place-results-list
+        [view]="placeResultsView()"
+        (placeSelected)="selectPlace($event.placeId, $event.trigger)"
+        (retryRequested)="retryPlaces()"
+        (clearFiltersRequested)="clearFilters()"
+        (showMoreRequested)="showMorePlaces()"
+      />
+    </section>
+
   </main>
 
   <footer class="footer-note">

@@ -12,6 +12,7 @@ import {
 } from '@angular/core';
 import { PlaceDto } from '../../core/models/catalog.models';
 import { NearbyHub, formatApproximateDistance } from './nearby-hubs';
+import { getPlaceImageAttribution, type PlaceImageAttribution } from './place-image-attribution';
 
 export type AddPlaceEvent = Readonly<{
   placeId: string;
@@ -38,6 +39,7 @@ export class PlaceDetailComponent implements OnChanges {
 
   @ViewChild('heading') private readonly heading?: ElementRef<HTMLElement>;
   readonly failedImage = signal(false);
+  readonly imageSizes = '(max-width: 900px) calc(100vw - 46px), 348px';
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['place']) {
@@ -51,11 +53,34 @@ export class PlaceDetailComponent implements OnChanges {
 
   isLicensedLocalImage(): boolean {
     const path = this.place.imagePath;
+    const attributionId = this.place.imageAttributionId;
+    const attribution = getPlaceImageAttribution(attributionId);
     return path !== null
-      && this.place.imageAttributionId !== null
+      && attribution !== null
+      && attribution.placeId === this.place.id
+      && attribution.cityId === this.place.cityId
+      && attribution.imagePath === path
       && !this.failedImage()
-      && path.startsWith('/assets/catalog/')
-      && !path.includes('..');
+      && path === `/assets/catalog/${attribution.id}.jpg`;
+  }
+
+  imageAttribution(): PlaceImageAttribution | null {
+    return this.isLicensedLocalImage()
+      ? getPlaceImageAttribution(this.place.imageAttributionId)
+      : null;
+  }
+
+  responsiveImageSrcSet(): string | null {
+    if (!this.isLicensedLocalImage() || this.place.imagePath === null) {
+      return null;
+    }
+
+    const attribution = getPlaceImageAttribution(this.place.imageAttributionId);
+    if (attribution === null || attribution.responsiveImagePaths.length !== 2) {
+      return null;
+    }
+
+    return `${attribution.responsiveImagePaths[0]} 640w, ${attribution.responsiveImagePaths[1]} 1280w`;
   }
 
   onImageError(): void {

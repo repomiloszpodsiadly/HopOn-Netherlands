@@ -7,18 +7,22 @@
     <span class="plans-topbar__note">Your city days</span>
   </header>
 
-  <main class="plans-main plans-list-main" aria-labelledby="saved-plans-title">
+  <main class="plans-main plans-list-main" aria-labelledby="saved-plans-title" [attr.aria-busy]="loading()">
     <div class="plans-list-heading">
       <div>
         <p class="plans-eyebrow">YOUR CITY DAYS</p>
         <h1 id="saved-plans-title">Saved <em>Plans.</em></h1>
-        <p class="plans-intro">Your plans come from this running HopOn backend and stay available until it restarts.</p>
+        <p class="plans-intro">Keep the places you are looking forward to together and shape them into a day.</p>
       </div>
       <a class="plans-button plans-button--primary" routerLink="/plans/new">Create a plan</a>
     </div>
 
     @if (loading()) {
-      <p class="plans-state" role="status">Loading your saved plans…</p>
+      <section class="plans-loading" role="status" aria-label="Loading saved plans">
+        <span class="visually-hidden">Loading your saved plans…</span>
+        <div class="plans-loading__card" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div class="plans-loading__card" aria-hidden="true"><span></span><span></span><span></span></div>
+      </section>
     } @else if (error(); as message) {
       <section class="plans-state plans-state--error" role="alert">
         <h2>Saved plans are unavailable</h2>
@@ -26,9 +30,9 @@
         <button class="plans-button plans-button--secondary" type="button" (click)="retry()">Try again</button>
       </section>
     } @else if (plans().length === 0) {
-      <section class="plans-empty">
+      <section class="plans-empty" aria-labelledby="plans-empty-title">
         <span class="plans-empty__mark" aria-hidden="true">✳</span>
-        <h2>Your plan book is ready.</h2>
+        <h2 id="plans-empty-title">Your plan book is ready.</h2>
         <p>Save a day from Explore and it will appear here.</p>
         <a class="plans-button plans-button--primary" routerLink="/plans/new">Start your first plan</a>
       </section>
@@ -59,6 +63,6 @@
     }
   </main>
 
-  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Only the backend can create or change a saved plan.</span></footer>
+  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Each plan keeps your stops together in the order you chose.</span></footer>
   <app-main-navigation [cityId]="navigationCityId()" />
 </div>

@@ -56,12 +56,14 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   @ViewChild('mapHost', { static: true }) private readonly mapHost!: ElementRef<HTMLElement>;
 
   readonly mapReady = signal(false);
+  readonly placesRendered = signal(false);
   readonly mapUnavailable = signal(false);
 
   private readonly injector = inject(Injector);
   private map: MapLibreMap | null = null;
   private mapLoadTimeout: ReturnType<typeof setTimeout> | null = null;
   private mapCleanup: (() => void)[] = [];
+  private placesIdleCleanup: (() => void) | null = null;
   private mapGeneration = 0;
   private cameraOperation = 0;
   private destroyed = false;
@@ -127,6 +129,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.disposeMap();
     this.mapReady.set(false);
+    this.placesRendered.set(false);
     this.mapUnavailable.set(false);
     this.createMap();
   }
@@ -234,6 +237,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
       });
       this.registerMapEvents(map, generation);
       this.mapReady.set(true);
+      this.watchPlacesRenderUntilIdle(map, generation);
       if (this.currentSelectedPlace() !== null) {
         this.scheduleSelectedPlaceFocus();
       } else {
@@ -400,8 +404,27 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   }
 
   private updatePlacesSource(): void {
-    const source = this.map?.getSource(PLACES_SOURCE_ID) as GeoJSONSource | undefined;
-    source?.setData(this.toFeatureCollection());
+    const map = this.map;
+    const source = map?.getSource(PLACES_SOURCE_ID) as GeoJSONSource | undefined;
+    if (map === null || map === undefined || source === undefined) {
+      return;
+    }
+
+    this.placesRendered.set(false);
+    source.setData(this.toFeatureCollection());
+    this.watchPlacesRenderUntilIdle(map, this.mapGeneration);
+  }
+
+  private watchPlacesRenderUntilIdle(map: MapLibreMap, generation: number): void {
+    this.placesIdleCleanup?.();
+    const onIdle = () => {
+      this.placesIdleCleanup = null;
+      if (this.isCurrentMap(map, generation)) {
+        this.placesRendered.set(true);
+      }
+    };
+    map.once('idle', onIdle);
+    this.placesIdleCleanup = () => map.off('idle', onIdle);
   }
 
   private toFeatureCollection(): PlaceFeatureCollection {
@@ -433,6 +456,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     }
     this.clearMapLoadTimeout();
     this.mapReady.set(false);
+    this.placesRendered.set(false);
     this.mapUnavailable.set(true);
     this.disposeMap();
   }
@@ -451,6 +475,9 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     const map = this.map;
     this.map = null;
     this.mapReady.set(false);
+    this.placesRendered.set(false);
+    this.placesIdleCleanup?.();
+    this.placesIdleCleanup = null;
     const cleanups = this.mapCleanup;
     this.mapCleanup = [];
     cleanups.forEach((cleanup) => cleanup());

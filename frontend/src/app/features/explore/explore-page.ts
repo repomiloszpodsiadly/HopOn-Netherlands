@@ -13,7 +13,7 @@ import {
   signal,
 } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   catchError,
   distinctUntilChanged,
@@ -48,6 +48,8 @@ import { MainNavigationComponent } from '../shared/main-navigation';
 import { MapViewportComponent } from './map-viewport';
 import { NearbyHub, nearbyHubsForPlace } from './nearby-hubs';
 import { AddPlaceEvent, PlaceDetailComponent } from './place-detail';
+import { getFeaturedPlaceImage } from './place-image-attribution';
+import { PlaceResultsListComponent, type PlaceResultsView } from './place-results-list';
 
 type ApiState = 'checking' | 'online' | 'offline' | 'unexpected';
 
@@ -82,7 +84,7 @@ export function resolveCityId(value: string | null): CityId {
 
 @Component({
   selector: 'app-explore-page',
-  imports: [MapViewportComponent, PlaceDetailComponent, MainNavigationComponent],
+  imports: [MapViewportComponent, PlaceDetailComponent, PlaceResultsListComponent, MainNavigationComponent, RouterLink],
   templateUrl: './explore-page.html',
   styleUrl: './explore-page.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -164,6 +166,13 @@ export class ExplorePage {
   readonly currentCityName = computed(
     () => this.currentCity()?.name ?? CITY_LABELS[this.selectedCityId()],
   );
+  readonly draftEditorCityId = computed(
+    () => this.draftStore.draft()?.cityId ?? this.draftStore.pendingCityId() ?? this.selectedCityId(),
+  );
+  readonly draftCityName = computed(
+    () => this.cities().find((city) => city.id === this.draftEditorCityId())?.name
+      ?? CITY_LABELS[this.draftEditorCityId()],
+  );
   readonly selectedPlace = computed(() => {
     const selectedId = this.selectedPlaceId();
     return selectedId === null
@@ -196,9 +205,24 @@ export class ExplorePage {
         (query.length === 0 || normalizeSearch(place.name).includes(query)),
     );
   });
+  readonly featuredPlace = computed(() => {
+    const attribution = getFeaturedPlaceImage(this.selectedCityId());
+    return attribution === null
+      ? null
+      : this.places().find((place) =>
+          place.id === attribution.placeId
+          && place.cityId === attribution.cityId
+          && place.imagePath === attribution.imagePath
+          && place.imageAttributionId === attribution.id,
+        ) ?? null;
+  });
   readonly visiblePlaces = computed(() => {
     const filtered = this.filteredPlaces();
-    const visible = filtered.slice(0, this.visiblePlaceLimit());
+    const featured = this.featuredPlace();
+    const ordered = featured !== null && filtered.some((place) => place.id === featured.id)
+      ? [featured, ...filtered.filter((place) => place.id !== featured.id)]
+      : filtered;
+    const visible = ordered.slice(0, this.visiblePlaceLimit());
     const selectedId = this.selectedPlaceId();
     if (selectedId === null || visible.some((place) => place.id === selectedId)) {
       return visible;
@@ -207,10 +231,27 @@ export class ExplorePage {
     return selectedPlace ? [selectedPlace, ...visible] : visible;
   });
   readonly resultCount = computed(() => this.filteredPlaces().length);
+  readonly resultCountLabel = computed(() => {
+    const count = this.resultCount();
+    return `${count} ${count === 1 ? 'place' : 'places'}`;
+  });
   readonly hasMorePlaces = computed(() => this.visiblePlaceLimit() < this.resultCount());
   readonly hasActiveFilters = computed(
     () => this.searchQuery().trim().length > 0 || this.activeCategory() !== null,
   );
+  readonly placeResultsView = computed<PlaceResultsView>(() => ({
+    cityName: this.currentCityName(),
+    loading: this.placesLoading(),
+    error: this.placesError(),
+    count: this.resultCount(),
+    activeFilters: this.hasActiveFilters(),
+    places: this.visiblePlaces(),
+    selectedPlaceId: this.selectedPlaceId(),
+    discoverPlaceIds: this.discoverPlaceIds(),
+    categoryLabels: this.categoryLabels,
+    hasMore: this.hasMorePlaces(),
+    remainingCount: this.resultCount() - this.visiblePlaceLimit(),
+  }));
 
   constructor() {
     this.checkHealth();
@@ -293,7 +334,10 @@ export class ExplorePage {
   browsePlaces(): void {
     const results = this.placeResultsElement?.nativeElement;
     results?.focus();
-    results?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    results?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
   }
 
   selectPlace(placeId: string, trigger?: EventTarget | null): void {
@@ -341,22 +385,32 @@ export class ExplorePage {
   }
 
   chooseDiscoverTheme(theme: DiscoverTheme): void {
+    if (this.activeDiscoverTheme() === theme) {
+      this.activeDiscoverTheme.set(null);
+      this.discoverRequest$.next(null);
+      return;
+    }
+
     this.searchQuery.set('');
     this.activeCategory.set(null);
     this.visiblePlaceLimit.set(INITIAL_PLACE_LIMIT);
     this.activeDiscoverTheme.set(theme);
-    this.discoverState.set('loading');
-    this.discoverResponse.set(null);
-    this.discoverError.set(null);
-    this.discoverPlaceIds.set([]);
-    this.discoverRequest$.next({ cityId: this.selectedCityId(), theme });
+    this.requestDiscoverTheme(theme);
   }
 
   retryDiscover(): void {
     const theme = this.activeDiscoverTheme();
     if (theme !== null) {
-      this.chooseDiscoverTheme(theme);
+      this.requestDiscoverTheme(theme);
     }
+  }
+
+  private requestDiscoverTheme(theme: DiscoverTheme): void {
+    this.discoverState.set('loading');
+    this.discoverResponse.set(null);
+    this.discoverError.set(null);
+    this.discoverPlaceIds.set([]);
+    this.discoverRequest$.next({ cityId: this.selectedCityId(), theme });
   }
 
   addPlaceToPlan(placeId: string, trigger?: EventTarget | null): void {
@@ -387,10 +441,6 @@ export class ExplorePage {
     this.draftStore.startDraftForRequestedCity();
     this.draftFeedback.set(`Started a new ${this.currentCityName()} tab draft.`);
     this.restoreDraftFocus();
-  }
-
-  displayTag(tag: string): string {
-    return tag.replaceAll('_', ' ');
   }
 
   private requestDraftAdd(placeIds: readonly string[], trigger?: EventTarget | null): void {

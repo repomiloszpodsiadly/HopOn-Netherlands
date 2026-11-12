@@ -71,7 +71,7 @@
         </label>
 
         @if (draftStore.cityConflict(); as conflict) {
-          <section class="editor-conflict" role="dialog" aria-modal="true" aria-labelledby="plan-city-conflict-title">
+          <section class="editor-conflict" role="region" aria-labelledby="plan-city-conflict-title">
             <h2 id="plan-city-conflict-title">Keep the existing draft?</h2>
             <p>This tab has a {{ cityName(draft.cityId) }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?</p>
             <div class="editor-actions">
@@ -115,7 +115,7 @@
                       <p>Remove it before saving this plan.</p>
                     }
                   </div>
-                  <div class="editor-place__actions" [attr.aria-label]="'Reorder ' + (row.place?.name ?? 'unavailable place')">
+                  <div class="editor-place__actions" role="group" [attr.aria-label]="'Reorder ' + (row.place?.name ?? 'unavailable place')">
                     <button class="editor-icon-button" type="button" [disabled]="saving() || index === 0" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' up'" (click)="movePlace(row.id, 'up')">↑</button>
                     <button class="editor-icon-button" type="button" [disabled]="saving() || index === draft.placeIds.length - 1" [attr.aria-label]="'Move ' + (row.place?.name ?? 'place') + ' down'" (click)="movePlace(row.id, 'down')">↓</button>
                     <button class="editor-remove" type="button" [disabled]="saving()" [attr.aria-label]="'Remove ' + (row.place?.name ?? 'unavailable place')" (click)="removePlace(row.id)">Remove</button>
@@ -162,6 +162,6 @@
     }
   </main>
 
-  <footer class="plans-footer"><span>HopOn Netherlands</span><span>A tab draft becomes a saved plan only after the backend confirms it.</span></footer>
+  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Your draft becomes a saved plan after you choose Save plan.</span></footer>
   <app-main-navigation [cityId]="requestedCityId()" />
 </div>

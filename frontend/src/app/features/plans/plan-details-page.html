@@ -7,7 +7,7 @@
     <a class="details-topbar-link" routerLink="/plans">Saved Plans</a>
   </header>
 
-  <main class="plan-details-main" aria-labelledby="plan-details-title">
+  <main class="plan-details-main" aria-labelledby="plan-details-title" [attr.aria-busy]="loading()">
     @if (loading()) {
       <p class="plans-state" role="status">Loading this saved plan…</p>
     } @else if (missing() && plan() === null) {
@@ -73,7 +73,7 @@
             (input)="onNameInput($event)"
             aria-describedby="saved-plan-name-help"
           />
-          <small id="saved-plan-name-help">Up to 80 characters. Changes are saved to the backend when you choose Save changes.</small>
+          <small id="saved-plan-name-help">Up to 80 characters. Changes take effect when you choose Save changes.</small>
         </label>
 
         <section class="details-stops" aria-labelledby="saved-plan-stops-title">
@@ -100,7 +100,7 @@
                     <p>Reference: <code>{{ row.id }}</code>. You can remove this stop from the saved plan.</p>
                   }
                 </div>
-                <div class="details-stop__actions" [attr.aria-label]="'Actions for ' + (row.place?.name ?? row.id)">
+                <div class="details-stop__actions" role="group" [attr.aria-label]="'Actions for ' + (row.place?.name ?? row.id)">
                   <button class="details-icon-button" type="button" [disabled]="index === 0 || saving() || deleting() || missing()" [attr.aria-label]="'Move ' + (row.place?.name ?? row.id) + ' up'" (click)="movePlace(row.id, 'up')">↑</button>
                   <button class="details-icon-button" type="button" [disabled]="index === placeIds().length - 1 || saving() || deleting() || missing()" [attr.aria-label]="'Move ' + (row.place?.name ?? row.id) + ' down'" (click)="movePlace(row.id, 'down')">↓</button>
                   <button class="details-remove-button" type="button" [disabled]="saving() || deleting() || missing()" [attr.aria-label]="'Remove ' + (row.place?.name ?? row.id)" (click)="removePlace(row.id)">Remove</button>
@@ -152,14 +152,14 @@
     }
   </main>
 
-  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Saved plan edits are separate from your current tab draft.</span></footer>
+  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Plan changes are saved when you choose Save changes.</span></footer>
   <app-main-navigation [cityId]="plan()?.cityId ?? 'amsterdam'" />
 
   <app-confirm-dialog
     #deleteDialog
     dialogId="delete-plan-confirmation"
     title="Delete this saved plan?"
-    description="This removes the plan from the running backend. This action cannot be undone."
+    description="This permanently removes the plan from your saved list. This action cannot be undone."
     confirmLabel="Delete plan"
     [busy]="deleting()"
     [message]="deleteMessage()"
@@ -169,7 +169,7 @@
     #discardDialog
     dialogId="discard-plan-edits"
     title="Leave without saving?"
-    description="Your edits to this saved plan have not been sent to the backend."
+    description="Your edits to this saved plan have not been saved."
     confirmLabel="Discard edits"
     cancelLabel="Keep editing"
     (confirmed)="confirmDiscardEdits()"

@@ -28,7 +28,7 @@ interface MockSource {
 
 interface MockMap {
   options: Readonly<Record<string, unknown>>;
-  handlers: { event: string; layer?: string; handler: MockHandler }[];
+  handlers: { event: string; layer?: string; handler: MockHandler; once?: boolean }[];
   sources: Record<string, MockSource>;
   layers: unknown[];
   addControl: ReturnType<typeof vi.fn>;
@@ -52,7 +52,7 @@ const mockMapState = vi.hoisted(() => ({ instances: [] as unknown[], throwOnCrea
 vi.mock('maplibre-gl', () => {
   class FakeMap {
     readonly options: Readonly<Record<string, unknown>>;
-    readonly handlers: { event: string; layer?: string; handler: MockHandler }[] = [];
+    readonly handlers: { event: string; layer?: string; handler: MockHandler; once?: boolean }[] = [];
     readonly sources: Record<string, MockSource> = {};
     readonly layers: unknown[] = [];
     readonly addControl = vi.fn();
@@ -128,10 +128,20 @@ vi.mock('maplibre-gl', () => {
       );
     }
 
+    once(event: string, handler: MockHandler): void {
+      this.handlers.push({ event, handler, once: true });
+    }
+
     emit(event: string, layer?: string, payload: MockEvent = {}): void {
-      this.handlers
-        .filter((entry) => entry.event === event && entry.layer === layer)
-        .forEach((entry) => entry.handler(payload));
+      const matchingHandlers = this.handlers.filter(
+        (entry) => entry.event === event && entry.layer === layer,
+      );
+      matchingHandlers.forEach((entry) => {
+        if (entry.once) {
+          this.handlers.splice(this.handlers.indexOf(entry), 1);
+        }
+        entry.handler(payload);
+      });
     }
 
     dispatchCanvas(event: string): void {
@@ -626,6 +636,28 @@ describe('MapViewportComponent', () => {
     expect(fixture.nativeElement.querySelector('.map-viewport__fallback')).toBeTruthy();
     expect(fixture.nativeElement.querySelector('.map-viewport__loading')).toBeNull();
     expect(fixture.nativeElement.querySelector('.place-name')?.textContent).toContain('A place');
+    fixture.destroy();
+  });
+
+  it('emits Browse Places from the unavailable-map fallback button', async () => {
+    mockMapState.throwOnCreate = true;
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    const browsePlaces = vi.fn();
+    fixture.componentInstance.browsePlaces.subscribe(browsePlaces);
+    fixture.detectChanges();
+
+    const button = await vi.waitFor(() => {
+      const fallbackButton = fixture.nativeElement.querySelector(
+        '.map-viewport__fallback-actions button.button--secondary',
+      ) as HTMLButtonElement | null;
+      expect(fallbackButton).not.toBeNull();
+      return fallbackButton as HTMLButtonElement;
+    });
+    button.click();
+
+    expect(browsePlaces).toHaveBeenCalledOnce();
     fixture.destroy();
   });
 });

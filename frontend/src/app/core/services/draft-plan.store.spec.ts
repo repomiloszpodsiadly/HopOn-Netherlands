@@ -46,6 +46,18 @@ describe('DraftPlanStore', () => {
     expect(store.draft()?.updatedAt).toMatch(/^\d{4}-\d\d-\d\dT/);
   });
 
+  it('keeps temporary drafts above the 12-place save limit intact', () => {
+    const store = TestBed.inject(DraftPlanStore);
+    const catalog = Array.from({ length: 13 }, (_, index) => place(`place-${index}`));
+    const placeIds = catalog.map(({ id }) => id);
+
+    expect(store.addPlaces('amsterdam', 'Amsterdam', placeIds, catalog))
+      .toEqual({ status: 'added', addedCount: 13, alreadyPresentCount: 0 });
+    expect(store.draft()?.placeIds).toEqual(placeIds);
+    expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}').placeIds)
+      .toEqual(placeIds);
+  });
+
   it('requires an explicit keep or replace decision before crossing cities', () => {
     const store = TestBed.inject(DraftPlanStore);
     store.addPlaces('amsterdam', 'Amsterdam', ['a1'], [place('a1')]);

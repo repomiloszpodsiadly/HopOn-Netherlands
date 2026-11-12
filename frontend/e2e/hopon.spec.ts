@@ -607,29 +607,47 @@ test('captures real Explore viewport states without screenshot-only styling', as
   }
 });
 
-test('records a separate real OpenFreeMap style availability smoke', async ({ page }) => {
+test('real OpenFreeMap live style smoke [live-map]', async ({ page }) => {
+  test.skip(
+    process.env.HOPON_LIVE_MAP_SMOKE !== '1',
+    'Set HOPON_LIVE_MAP_SMOKE=1 to run this external-service smoke.',
+  );
   test.setTimeout(30_000);
   await page.unroute(openFreeMapStyleUrl);
-  const styleResponsePromise = page.waitForResponse(
-    (response) => response.url() === openFreeMapStyleUrl,
-    { timeout: 15_000 },
-  ).catch(() => null);
+  const styleResponsePromise = waitForOpenFreeMapStyleResponse(page);
 
   await page.goto('/');
   const styleResponse = await styleResponsePromise;
-  if (styleResponse === null) {
-    console.log('HOP004_REAL_OPENFREEMAP_SMOKE no style response received within 15 seconds.');
-    return;
-  }
+  assertSuccessfulOpenFreeMapStyleResponse(styleResponse);
+  await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
+  await waitForMapReady(page);
+  console.log(
+    `HOP004_REAL_OPENFREEMAP_SMOKE PASS: style HTTP ${styleResponse.status()}, canvas visible, MapLibre ready. `
+    + 'External tile delivery is not asserted by this smoke.',
+  );
+});
 
-  console.log(`HOP004_REAL_OPENFREEMAP_SMOKE HTTP ${styleResponse.status()}.`);
-  if (styleResponse.ok()) {
-    await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
-    console.log('HOP004_REAL_OPENFREEMAP_SMOKE map canvas became visible.');
-    return;
-  }
+test('fails the OpenFreeMap smoke check on a simulated HTTP 503', async ({ page }) => {
+  await page.unroute(openFreeMapStyleUrl);
+  await page.route(openFreeMapStyleUrl, (route) =>
+    route.fulfill({ status: 503, contentType: 'text/plain', body: 'Controlled style outage' }),
+  );
+  const styleResponsePromise = waitForOpenFreeMapStyleResponse(page);
+  await page.goto('/');
 
-  console.log('HOP004_REAL_OPENFREEMAP_SMOKE external style unavailable; deterministic UI captures use the isolated local style.');
+  const styleResponse = await styleResponsePromise;
+  expect(() => assertSuccessfulOpenFreeMapStyleResponse(styleResponse)).toThrow('HTTP 503');
+});
+
+test('does not pass when the OpenFreeMap style response is missing', async ({ page }) => {
+  await page.unroute(openFreeMapStyleUrl);
+  await page.route(openFreeMapStyleUrl, (route) => route.abort());
+  const styleRequestPromise = page.waitForRequest((request) => request.url() === openFreeMapStyleUrl);
+  const styleResponsePromise = waitForOpenFreeMapStyleResponse(page, 1_000);
+  await page.goto('/');
+  await styleRequestPromise;
+
+  await expect(styleResponsePromise).rejects.toThrow();
 });
 
 test('keeps desktop Discover results bounded and the map rectangle stable', async ({ page }) => {
@@ -1814,6 +1832,18 @@ test('checks responsive geometry and captures optional editorial images with rel
     await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
   }
 });
+
+function waitForOpenFreeMapStyleResponse(page: Page, timeout = 15_000): Promise<Response> {
+  return page.waitForResponse(
+    (response) => response.url() === openFreeMapStyleUrl,
+    { timeout },
+  );
+}
+
+function assertSuccessfulOpenFreeMapStyleResponse(response: Response): void {
+  expect(response.ok(), `Expected a successful live style response, received HTTP ${response.status()}.`)
+    .toBe(true);
+}
 
 async function useIsolatedMapStyle(page: Page): Promise<void> {
   await page.route(openFreeMapStyleUrl, (route) =>

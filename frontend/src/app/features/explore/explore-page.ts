@@ -334,7 +334,10 @@ export class ExplorePage {
   browsePlaces(): void {
     const results = this.placeResultsElement?.nativeElement;
     results?.focus();
-    results?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const prefersReducedMotion = typeof window !== 'undefined'
+      && typeof window.matchMedia === 'function'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    results?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
   }
 
   selectPlace(placeId: string, trigger?: EventTarget | null): void {
@@ -392,18 +395,22 @@ export class ExplorePage {
     this.activeCategory.set(null);
     this.visiblePlaceLimit.set(INITIAL_PLACE_LIMIT);
     this.activeDiscoverTheme.set(theme);
-    this.discoverState.set('loading');
-    this.discoverResponse.set(null);
-    this.discoverError.set(null);
-    this.discoverPlaceIds.set([]);
-    this.discoverRequest$.next({ cityId: this.selectedCityId(), theme });
+    this.requestDiscoverTheme(theme);
   }
 
   retryDiscover(): void {
     const theme = this.activeDiscoverTheme();
     if (theme !== null) {
-      this.chooseDiscoverTheme(theme);
+      this.requestDiscoverTheme(theme);
     }
+  }
+
+  private requestDiscoverTheme(theme: DiscoverTheme): void {
+    this.discoverState.set('loading');
+    this.discoverResponse.set(null);
+    this.discoverError.set(null);
+    this.discoverPlaceIds.set([]);
+    this.discoverRequest$.next({ cityId: this.selectedCityId(), theme });
   }
 
   addPlaceToPlan(placeId: string, trigger?: EventTarget | null): void {

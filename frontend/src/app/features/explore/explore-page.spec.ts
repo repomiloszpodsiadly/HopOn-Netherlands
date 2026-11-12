@@ -263,6 +263,56 @@ describe('ExplorePage', () => {
     },
   );
 
+  it.each([
+    { reducedMotion: true, behavior: 'auto' },
+    { reducedMotion: false, behavior: 'smooth' },
+  ])('browses places with $behavior scrolling for reducedMotion=$reducedMotion', async ({ reducedMotion, behavior }) => {
+    const { harness, http, component } = await startPage('/?city=amsterdam');
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const placeResults = harness.routeNativeElement?.querySelector('.place-results') as HTMLElement;
+    const scrollIntoView = vi.fn();
+    const matchMedia = vi.fn().mockReturnValue({ matches: reducedMotion });
+    Object.defineProperty(placeResults, 'scrollIntoView', { value: scrollIntoView, configurable: true });
+    vi.stubGlobal('matchMedia', matchMedia);
+
+    try {
+      component.browsePlaces();
+
+      expect(document.activeElement).toBe(placeResults);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior, block: 'start' });
+      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('routes the map Browse Places event through the motion-aware page handler', async () => {
+    const { harness, http } = await startPage('/?city=amsterdam');
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const placeResults = harness.routeNativeElement?.querySelector('.place-results') as HTMLElement;
+    const scrollIntoView = vi.fn();
+    const matchMedia = vi.fn().mockReturnValue({ matches: true });
+    Object.defineProperty(placeResults, 'scrollIntoView', { value: scrollIntoView, configurable: true });
+    vi.stubGlobal('matchMedia', matchMedia);
+
+    try {
+      const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
+      map.browsePlaces.emit();
+
+      expect(document.activeElement).toBe(placeResults);
+      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
+      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('loads a directly requested city and changes city through the accessible selector', async () => {
     const { harness, http, component } = await startPage('/?city=rotterdam');
     const rotterdamRequest = placesRequest(http, 'rotterdam');
@@ -500,6 +550,109 @@ describe('ExplorePage', () => {
     await harness.fixture.whenStable();
     harness.detectChanges();
     expect(component.activeDiscoverTheme()).toBeNull();
+    expect(component.discoverPlaceIds()).toEqual([]);
+    expect(harness.routeNativeElement?.querySelector('.discover-results')).toBeNull();
+  });
+
+  it('retries a failed Discover request manually without deselecting its theme', async () => {
+    const { harness, http, component } = await startPage('/?city=amsterdam');
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const architectureButton = Array.from(
+      harness.routeNativeElement?.querySelectorAll('.discover-theme') ?? [],
+    ).find((button) => button.textContent?.includes('Architecture Hunt')) as HTMLButtonElement;
+    architectureButton.click();
+    const firstRequest = http.expectOne(
+      (request) => request.url === '/api/discover'
+        && request.params.get('cityId') === 'amsterdam'
+        && request.params.get('theme') === 'architecture',
+    );
+    firstRequest.flush(
+      { status: 500, detail: 'Discover is temporarily unavailable' },
+      { status: 500, statusText: 'Server Error' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(architectureButton.getAttribute('aria-pressed')).toBe('true');
+    expect(harness.routeNativeElement?.querySelector('[role="alert"]')?.textContent)
+      .toContain('Discover is temporarily unavailable');
+    expect(harness.routeNativeElement?.querySelector('.discover-error button')).toBeTruthy();
+
+    (harness.routeNativeElement?.querySelector('.discover-error button') as HTMLButtonElement).click();
+    harness.detectChanges();
+    expect(component.activeDiscoverTheme()).toBe('architecture');
+    expect(harness.routeNativeElement?.querySelector('.discover-results [role="status"]')?.textContent)
+      .toContain('Finding architecture places in Amsterdam');
+    const secondRequest = http.expectOne(
+      (request) => request.url === '/api/discover'
+        && request.params.get('cityId') === 'amsterdam'
+        && request.params.get('theme') === 'architecture',
+    );
+    expect(secondRequest).not.toBe(firstRequest);
+    secondRequest.flush(
+      { status: 503, detail: 'Discover is still unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(component.activeDiscoverTheme()).toBe('architecture');
+    expect(architectureButton.getAttribute('aria-pressed')).toBe('true');
+    expect(harness.routeNativeElement?.querySelector('.discover-error button')).toBeTruthy();
+    http.expectNone((request) => request.url === '/api/discover');
+
+    (harness.routeNativeElement?.querySelector('.discover-error button') as HTMLButtonElement).click();
+    const thirdRequest = http.expectOne(
+      (request) => request.url === '/api/discover'
+        && request.params.get('cityId') === 'amsterdam'
+        && request.params.get('theme') === 'architecture',
+    );
+    expect(thirdRequest).not.toBe(secondRequest);
+    thirdRequest.flush({
+      cityId: 'amsterdam',
+      theme: 'architecture',
+      description: 'Architecture highlights selected from the verified catalog.',
+      placeIds: ['museumplein', 'not-in-catalog'],
+    });
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(component.activeDiscoverTheme()).toBe('architecture');
+    expect(component.discoverState()).toBe('loaded');
+    expect(component.discoverPlaceIds()).toEqual(['museumplein']);
+    expect(architectureButton.getAttribute('aria-pressed')).toBe('true');
+    expect(harness.routeNativeElement?.querySelectorAll('.discover-pick')).toHaveLength(1);
+    expect(harness.routeNativeElement?.textContent).toContain('Museumplein');
+    expect(harness.routeNativeElement?.querySelector('.discover-error')).toBeNull();
+    http.expectNone((request) => request.url === '/api/discover');
+  });
+
+  it('deselects a selected Discover theme and cancels its pending request', async () => {
+    const { harness, http, component } = await startPage('/?city=amsterdam');
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const architectureButton = Array.from(
+      harness.routeNativeElement?.querySelectorAll('.discover-theme') ?? [],
+    ).find((button) => button.textContent?.includes('Architecture Hunt')) as HTMLButtonElement;
+    architectureButton.click();
+    const pendingRequest = http.expectOne(
+      (request) => request.url === '/api/discover'
+        && request.params.get('cityId') === 'amsterdam'
+        && request.params.get('theme') === 'architecture',
+    );
+
+    architectureButton.click();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(pendingRequest.cancelled).toBe(true);
+    expect(component.activeDiscoverTheme()).toBeNull();
+    expect(component.discoverState()).toBe('idle');
     expect(component.discoverPlaceIds()).toEqual([]);
     expect(harness.routeNativeElement?.querySelector('.discover-results')).toBeNull();
   });

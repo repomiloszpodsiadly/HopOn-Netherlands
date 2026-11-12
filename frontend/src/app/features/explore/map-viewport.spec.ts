@@ -638,4 +638,26 @@ describe('MapViewportComponent', () => {
     expect(fixture.nativeElement.querySelector('.place-name')?.textContent).toContain('A place');
     fixture.destroy();
   });
+
+  it('emits Browse Places from the unavailable-map fallback button', async () => {
+    mockMapState.throwOnCreate = true;
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('places', [PLACE]);
+    const browsePlaces = vi.fn();
+    fixture.componentInstance.browsePlaces.subscribe(browsePlaces);
+    fixture.detectChanges();
+
+    const button = await vi.waitFor(() => {
+      const fallbackButton = fixture.nativeElement.querySelector(
+        '.map-viewport__fallback-actions button.button--secondary',
+      ) as HTMLButtonElement | null;
+      expect(fallbackButton).not.toBeNull();
+      return fallbackButton as HTMLButtonElement;
+    });
+    button.click();
+
+    expect(browsePlaces).toHaveBeenCalledOnce();
+    fixture.destroy();
+  });
 });

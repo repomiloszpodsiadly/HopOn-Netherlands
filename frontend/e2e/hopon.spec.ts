@@ -229,6 +229,92 @@ test('renders correctly licensed featured-photo fixtures across cities and respo
   }
 });
 
+test('traces draft-to-catalog keyboard focus and visual positions across viewports', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('.place-card')).toHaveCount(40);
+  await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
+  await waitForMapReady(page);
+  const traceFocus = async () => page.evaluate(() => {
+    const focused = document.activeElement;
+    if (!(focused instanceof HTMLElement)) {
+      return null;
+    }
+    const bounds = focused.getBoundingClientRect();
+    return {
+      tag: focused.tagName.toLowerCase(),
+      className: typeof focused.className === 'string' ? focused.className : '',
+      label: (focused.getAttribute('aria-label') ?? focused.innerText ?? '').trim().replace(/\s+/g, ' '),
+      bounds: { x: bounds.x, y: bounds.y, width: bounds.width, height: bounds.height },
+      scrollY: window.scrollY,
+    };
+  });
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1024, height: 768 },
+    { width: 360, height: 800 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    const draftCta = page.getByRole('link', { name: 'Start a day plan' });
+    await draftCta.focus();
+    await page.keyboard.press('Shift+Tab');
+    const beforeDraft = await traceFocus();
+    await page.keyboard.press('Tab');
+    await expect(draftCta).toBeFocused();
+    const draft = await traceFocus();
+    await page.keyboard.press('Tab');
+    const firstPlace = await traceFocus();
+    const layout = await page.evaluate(() => {
+      const draftPanel = document.querySelector('.draft-panel');
+      const placeResults = document.querySelector('.place-results');
+      if (!(draftPanel instanceof HTMLElement) || !(placeResults instanceof HTMLElement)) {
+        return null;
+      }
+      const draftBounds = draftPanel.getBoundingClientRect();
+      const placesBounds = placeResults.getBoundingClientRect();
+      return {
+        draftBottom: draftBounds.bottom,
+        placesTop: placesBounds.top,
+        draftBeforePlacesInDom: (draftPanel.compareDocumentPosition(placeResults) & Node.DOCUMENT_POSITION_FOLLOWING) > 0,
+      };
+    });
+    console.log(`Explore keyboard trace ${viewport.width}x${viewport.height}: ${JSON.stringify({ beforeDraft, draft, firstPlace, layout })}`);
+    await expect(page.locator('.place-card').first()).toBeFocused();
+    expect(layout).not.toBeNull();
+    expect(layout!.draftBottom).toBeLessThanOrEqual(layout!.placesTop);
+    expect(firstPlace!.bounds.y).toBeGreaterThan(draft!.bounds.y);
+    if (viewport.width <= 900) {
+      expect(layout!.draftBeforePlacesInDom).toBe(true);
+    }
+  }
+});
+
+test('uses automatic scrolling for the map Browse Places action with reduced motion', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    const scrollIntoView = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = function (this: Element, options?: ScrollIntoViewOptions): void {
+      if (this instanceof HTMLElement && this.classList.contains('place-results')) {
+        sessionStorage.setItem('hopon:test-browse-scroll-options', JSON.stringify(options ?? null));
+      }
+      scrollIntoView.call(this, options);
+    };
+  });
+  await page.unroute(openFreeMapStyleUrl);
+  await page.route(openFreeMapStyleUrl, (route) =>
+    route.fulfill({ status: 503, contentType: 'text/plain', body: 'Controlled map outage' }),
+  );
+  await page.goto('/');
+  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
+
+  await page.getByRole('button', { name: 'Browse places' }).click();
+  await expect(page.locator('.place-results')).toBeFocused();
+  expect(await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
+  expect(await page.evaluate(() => sessionStorage.getItem('hopon:test-browse-scroll-options')))
+    .toBe(JSON.stringify({ behavior: 'auto', block: 'start' }));
+});
+
 test('keeps the mobile draft CTA before the place catalog and routes to its draft city', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.place-card').first()).toBeVisible();
@@ -267,11 +353,11 @@ test('keeps the mobile draft CTA before the place catalog and routes to its draf
     const map = document.querySelector('.explore-main')!.getBoundingClientRect();
     const draft = document.querySelector('.draft-panel')!.getBoundingClientRect();
     const places = document.querySelector('.place-results')!.getBoundingClientRect();
-    return { mapLeft: map.left, draftLeft: draft.left, draftTop: draft.top, placesLeft: places.left, placesTop: places.top };
+    return { mapLeft: map.left, draftLeft: draft.left, draftBottom: draft.bottom, placesLeft: places.left, placesTop: places.top };
   });
   expect(desktopLayout.mapLeft).toBeGreaterThan(desktopLayout.placesLeft);
   expect(desktopLayout.draftLeft).toBeCloseTo(desktopLayout.placesLeft, 0);
-  expect(desktopLayout.draftTop).toBeGreaterThan(desktopLayout.placesTop);
+  expect(desktopLayout.draftBottom).toBeLessThanOrEqual(desktopLayout.placesTop);
 
   await page.setViewportSize({ width: 390, height: 844 });
   const firstCard = page.locator('.place-card').first();

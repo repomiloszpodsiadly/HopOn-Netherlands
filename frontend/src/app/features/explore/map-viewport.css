@@ -39,13 +39,7 @@
 .button--secondary { border-color: #cbd4ce; background: #fff; color: #384748; }
 .button:hover:not(:disabled) { filter: brightness(.97); }
 
-@keyframes map-spin { to { transform: rotate(360deg); } }
-
 @media (max-width: 900px) {
   :host { height: auto; }
   .map-viewport { min-height: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .map-viewport__spinner { animation-duration: 1.5s; }
 }

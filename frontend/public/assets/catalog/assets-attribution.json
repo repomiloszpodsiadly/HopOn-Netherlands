@@ -21,7 +21,9 @@
       "redistributionLicenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
       "commercialUsePermitted": true,
       "shareAlikeRequired": true,
-      "displayCredit": "Photo by Elekes Andor, CC BY-SA 4.0",
+      "licenseLabel": "CC BY-SA 4.0",
+      "objectPosition": "center 18%",
+      "changeNotice": "Resized and re-encoded from the source; displayed with a crop.",
       "changes": "Used the Commons 1280 px JPEG derivative; re-encoded both local variants at JPEG quality 82 and resized one to 640×480. The interface applies a CSS object-fit crop; local files are not cropped or retouched.",
       "verifiedOn": "2026-11-11"
     },
@@ -44,7 +46,9 @@
       "redistributionLicenseUrl": "https://creativecommons.org/licenses/by/4.0/",
       "commercialUsePermitted": true,
       "shareAlikeRequired": false,
-      "displayCredit": "Photo by acediscovery, CC BY 4.0",
+      "licenseLabel": "CC BY 4.0",
+      "objectPosition": "center 45%",
+      "changeNotice": "Resized and re-encoded from the source; displayed with a crop.",
       "changes": "Used the Commons 1280 px JPEG derivative; re-encoded both local variants at JPEG quality 82 and resized one to 640×480. The interface applies a CSS object-fit crop; local files are not cropped or retouched.",
       "verifiedOn": "2026-11-11"
     },
@@ -67,7 +71,9 @@
       "redistributionLicenseUrl": "https://creativecommons.org/licenses/by/2.0/",
       "commercialUsePermitted": true,
       "shareAlikeRequired": false,
-      "displayCredit": "Photo by tED, CC BY 2.0",
+      "licenseLabel": "CC BY 2.0",
+      "objectPosition": "center 18%",
+      "changeNotice": "Resized and re-encoded from the source; displayed with a crop.",
       "changes": "Used the Commons 1280 px JPEG derivative; re-encoded both local variants at JPEG quality 82 and resized one to 640×480. The interface applies a CSS object-fit crop; local files are not cropped or retouched.",
       "verifiedOn": "2026-11-11"
     }

@@ -54,11 +54,14 @@ export class PlaceDetailComponent implements OnChanges {
   isLicensedLocalImage(): boolean {
     const path = this.place.imagePath;
     const attributionId = this.place.imageAttributionId;
+    const attribution = getPlaceImageAttribution(attributionId);
     return path !== null
-      && attributionId !== null
-      && getPlaceImageAttribution(attributionId) !== null
+      && attribution !== null
+      && attribution.placeId === this.place.id
+      && attribution.cityId === this.place.cityId
+      && attribution.imagePath === path
       && !this.failedImage()
-      && path === `/assets/catalog/${attributionId}.jpg`;
+      && path === `/assets/catalog/${attribution.id}.jpg`;
   }
 
   imageAttribution(): PlaceImageAttribution | null {
@@ -72,8 +75,12 @@ export class PlaceDetailComponent implements OnChanges {
       return null;
     }
 
-    const smallImagePath = this.place.imagePath.replace(/\.jpg$/, '-640.jpg');
-    return `${smallImagePath} 640w, ${this.place.imagePath} 1280w`;
+    const attribution = getPlaceImageAttribution(this.place.imageAttributionId);
+    if (attribution === null || attribution.responsiveImagePaths.length !== 2) {
+      return null;
+    }
+
+    return `${attribution.responsiveImagePaths[0]} 640w, ${attribution.responsiveImagePaths[1]} 1280w`;
   }
 
   onImageError(): void {

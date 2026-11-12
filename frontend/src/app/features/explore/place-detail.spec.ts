@@ -30,6 +30,8 @@ describe('PlaceDetailComponent image attribution', () => {
   it('renders responsive local imagery and readable source and license credit', () => {
     const image = fixture.nativeElement.querySelector('img') as HTMLImageElement | null;
     const credit = fixture.nativeElement.querySelector('.place-detail__credit') as HTMLElement | null;
+    const visual = fixture.nativeElement.querySelector('.place-detail__visual') as HTMLElement | null;
+    const changes = fixture.nativeElement.querySelector('.place-detail__changes') as HTMLElement | null;
     const links = credit?.querySelectorAll('a');
 
     expect(image?.getAttribute('src')).toBe('/assets/catalog/royal-palace-amsterdam.jpg');
@@ -43,6 +45,9 @@ describe('PlaceDetailComponent image attribution', () => {
       .toBe('https://commons.wikimedia.org/wiki/File:Royal_Palace_Amsterdam.jpg');
     expect(links?.[1].textContent).toContain('CC BY-SA 4.0');
     expect(links?.[1].getAttribute('href')).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
+    expect(visual?.contains(credit)).toBe(true);
+    expect(visual?.contains(changes)).toBe(false);
+    expect(changes?.textContent).toContain('re-encoded both local variants');
   });
 
   it('renders the verified author and license for every selected catalog image', () => {
@@ -93,6 +98,8 @@ describe('PlaceDetailComponent image attribution', () => {
       expect(links[0].getAttribute('href')).toBe(example.sourceUrl);
       expect(links[1].textContent).toContain(example.license);
       expect(links[1].getAttribute('href')).toBe(example.licenseUrl);
+      expect(fixture.nativeElement.querySelector('.place-detail__changes')?.textContent)
+        .toContain('resized one to 640×480');
     }
   });
 
@@ -110,6 +117,17 @@ describe('PlaceDetailComponent image attribution', () => {
     fixture.componentRef.setInput('place', {
       ...ROYAL_PALACE,
       imagePath: '/assets/catalog/erasmus-bridge-rotterdam.jpg',
+    });
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('img')).toBeNull();
+    expect(fixture.nativeElement.querySelector('.place-detail__credit')).toBeNull();
+  });
+
+  it('uses the fallback when the image attribution belongs to a different catalog POI', () => {
+    fixture.componentRef.setInput('place', {
+      ...ROYAL_PALACE,
+      id: 'different-amsterdam-place',
     });
     fixture.detectChanges();
 

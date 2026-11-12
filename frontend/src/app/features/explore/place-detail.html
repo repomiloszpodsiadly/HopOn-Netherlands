@@ -27,7 +27,7 @@
       />
       @if (imageAttribution(); as attribution) {
         <figcaption class="place-detail__credit">
-          <a [href]="attribution.sourceUrl" target="_blank" rel="noopener noreferrer">
+          <a [href]="attribution.sourcePageUrl" target="_blank" rel="noopener noreferrer">
             Photo by {{ attribution.author }}
           </a>
           <span aria-hidden="true">·</span>
@@ -41,6 +41,9 @@
       <span>From the verified {{ cityName }} catalog</span>
     }
   </figure>
+  @if (imageAttribution(); as attribution) {
+    <p class="place-detail__changes">{{ attribution.changes }}</p>
+  }
   <h2 #heading id="place-detail-title" aria-describedby="place-detail-description" tabindex="-1">{{ place.name }}</h2>
   <p class="place-detail__description" id="place-detail-description">{{ place.shortDescription }}</p>
   <p class="place-detail__location">

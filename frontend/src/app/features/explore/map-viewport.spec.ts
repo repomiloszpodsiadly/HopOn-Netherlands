@@ -28,7 +28,7 @@ interface MockSource {
 
 interface MockMap {
   options: Readonly<Record<string, unknown>>;
-  handlers: { event: string; layer?: string; handler: MockHandler }[];
+  handlers: { event: string; layer?: string; handler: MockHandler; once?: boolean }[];
   sources: Record<string, MockSource>;
   layers: unknown[];
   addControl: ReturnType<typeof vi.fn>;
@@ -52,7 +52,7 @@ const mockMapState = vi.hoisted(() => ({ instances: [] as unknown[], throwOnCrea
 vi.mock('maplibre-gl', () => {
   class FakeMap {
     readonly options: Readonly<Record<string, unknown>>;
-    readonly handlers: { event: string; layer?: string; handler: MockHandler }[] = [];
+    readonly handlers: { event: string; layer?: string; handler: MockHandler; once?: boolean }[] = [];
     readonly sources: Record<string, MockSource> = {};
     readonly layers: unknown[] = [];
     readonly addControl = vi.fn();
@@ -128,10 +128,20 @@ vi.mock('maplibre-gl', () => {
       );
     }
 
+    once(event: string, handler: MockHandler): void {
+      this.handlers.push({ event, handler, once: true });
+    }
+
     emit(event: string, layer?: string, payload: MockEvent = {}): void {
-      this.handlers
-        .filter((entry) => entry.event === event && entry.layer === layer)
-        .forEach((entry) => entry.handler(payload));
+      const matchingHandlers = this.handlers.filter(
+        (entry) => entry.event === event && entry.layer === layer,
+      );
+      matchingHandlers.forEach((entry) => {
+        if (entry.once) {
+          this.handlers.splice(this.handlers.indexOf(entry), 1);
+        }
+        entry.handler(payload);
+      });
     }
 
     dispatchCanvas(event: string): void {

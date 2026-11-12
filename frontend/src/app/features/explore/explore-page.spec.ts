@@ -48,6 +48,24 @@ const AMSTERDAM_PLACES: readonly PlaceDto[] = [
   },
 ];
 
+const FEATURED_PLACES: readonly PlaceDto[] = [
+  {
+    id: 'amsterdam-relation-3580875', cityId: 'amsterdam', name: 'Royal Palace', category: 'ARCHITECTURE',
+    latitude: 52.3731, longitude: 4.8913, tags: ['architecture'], shortDescription: 'Royal Palace in Amsterdam.',
+    imagePath: '/assets/catalog/royal-palace-amsterdam.jpg', imageAttributionId: 'royal-palace-amsterdam',
+  },
+  {
+    id: 'rotterdam-relation-20774225', cityId: 'rotterdam', name: 'Erasmus Bridge', category: 'ARCHITECTURE',
+    latitude: 51.909, longitude: 4.487, tags: ['architecture'], shortDescription: 'Erasmus Bridge in Rotterdam.',
+    imagePath: '/assets/catalog/erasmus-bridge-rotterdam.jpg', imageAttributionId: 'erasmus-bridge-rotterdam',
+  },
+  {
+    id: 'utrecht-way-262779230', cityId: 'utrecht', name: 'Dom Tower', category: 'LANDMARKS',
+    latitude: 52.0907, longitude: 5.1214, tags: ['landmark'], shortDescription: 'Dom Tower in Utrecht.',
+    imagePath: '/assets/catalog/dom-tower-utrecht.jpg', imageAttributionId: 'dom-tower-utrecht',
+  },
+];
+
 const HUBS: readonly MobilityHubDto[] = [
   {
     id: 'amsterdam-hub-a', cityId: 'amsterdam', name: 'Amsterdam Central',
@@ -129,6 +147,77 @@ describe('ExplorePage', () => {
     expect(TestBed.inject(Router).url).toContain('city=amsterdam');
     expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(3);
     expect(harness.routeNativeElement?.querySelector('nav[aria-label="Main navigation"]')).toBeTruthy();
+  });
+
+  it.each([
+    {
+      cityId: 'amsterdam', id: 'amsterdam-relation-3580875', name: 'Royal Palace',
+      imagePath: '/assets/catalog/royal-palace-amsterdam.jpg',
+      smallPath: '/assets/catalog/royal-palace-amsterdam-640.jpg', author: 'Elekes Andor', license: 'CC BY-SA 4.0',
+    },
+    {
+      cityId: 'rotterdam', id: 'rotterdam-relation-20774225', name: 'Erasmus Bridge',
+      imagePath: '/assets/catalog/erasmus-bridge-rotterdam.jpg',
+      smallPath: '/assets/catalog/erasmus-bridge-rotterdam-640.jpg', author: 'acediscovery', license: 'CC BY 4.0',
+    },
+    {
+      cityId: 'utrecht', id: 'utrecht-way-262779230', name: 'Dom Tower',
+      imagePath: '/assets/catalog/dom-tower-utrecht.jpg',
+      smallPath: '/assets/catalog/dom-tower-utrecht-640.jpg', author: 'tED', license: 'CC BY 2.0',
+    },
+  ] as const)('features the correctly attributed $name in $cityId', async (example) => {
+    const { harness, http } = await startPage(`/?city=${example.cityId}`);
+    placesRequest(http, example.cityId).flush([
+      ...FEATURED_PLACES.filter((place) => place.cityId === example.cityId),
+      {
+        id: `${example.cityId}-ordinary-place`, cityId: example.cityId, name: 'A nearby place',
+        category: 'LANDMARKS', latitude: 52, longitude: 5, tags: [], shortDescription: 'Another mapped place.',
+        imagePath: null, imageAttributionId: null,
+      },
+    ]);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const cards = harness.routeNativeElement?.querySelectorAll('.place-card');
+    const featuredCard = cards?.[0] as HTMLButtonElement | undefined;
+    const image = featuredCard?.querySelector('img') as HTMLImageElement | null | undefined;
+    const credit = harness.routeNativeElement?.querySelector('.place-card__credit') as HTMLElement | null;
+
+    expect(cards).toHaveLength(2);
+    expect(featuredCard?.textContent).toContain(example.name);
+    expect(featuredCard?.classList.contains('place-card--featured')).toBe(true);
+    expect(featuredCard?.getAttribute('aria-pressed')).toBe('false');
+    expect(image?.getAttribute('src')).toBe(example.imagePath);
+    expect(image?.getAttribute('srcset')).toContain(`${example.smallPath} 640w`);
+    expect(image?.getAttribute('sizes')).toContain('100vw');
+    expect(image?.getAttribute('width')).toBe('1280');
+    expect(image?.getAttribute('height')).toBe('960');
+    expect(image?.getAttribute('loading')).toBe('eager');
+    expect(credit?.textContent).toContain(example.author);
+    expect(credit?.textContent).toContain(example.license);
+    expect(credit?.textContent).toContain('Resized and re-encoded from the source; displayed with a crop.');
+    expect(credit?.querySelector('a[href^="https://commons.wikimedia.org/"]')).toBeTruthy();
+    expect(credit?.querySelector(`a[href^="https://creativecommons.org/licenses/"]`)?.textContent)
+      .toContain(example.license);
+  });
+
+  it('keeps a featured place selectable when its local photo fails to load', async () => {
+    const { harness, http, component } = await startPage('/?city=amsterdam');
+    placesRequest(http, 'amsterdam').flush([FEATURED_PLACES[0]]);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    const image = harness.routeNativeElement?.querySelector('.place-card__image') as HTMLImageElement;
+    image.dispatchEvent(new Event('error'));
+    harness.detectChanges();
+
+    expect(harness.routeNativeElement?.querySelector('.place-card__image')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('.place-card__credit')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('.place-card')?.classList.contains('place-card--featured'))
+      .toBe(false);
+    (harness.routeNativeElement?.querySelector('.place-card') as HTMLButtonElement).click();
+    harness.detectChanges();
+    expect(component.selectedPlaceId()).toBe(FEATURED_PLACES[0].id);
   });
 
   it('replaces an invalid city query with the Amsterdam default', async () => {
@@ -276,11 +365,18 @@ describe('ExplorePage', () => {
     harness.detectChanges();
 
     const count = harness.routeNativeElement?.querySelector('.draft-count');
+    const draftPanel = harness.routeNativeElement?.querySelector('.draft-panel');
+    const placeResults = harness.routeNativeElement?.querySelector('.place-results');
     const editorLink = harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement;
     expect(count?.textContent).toContain('0');
     expect(count?.textContent).toContain('stops');
-    expect(harness.routeNativeElement?.textContent).toContain('No stops yet');
+    expect(harness.routeNativeElement?.textContent).toContain('No stops yet for Amsterdam');
     expect(editorLink.getAttribute('href')).toBe('/plans/new?city=amsterdam');
+    expect(draftPanel).not.toBeNull();
+    expect(placeResults).not.toBeNull();
+    expect(
+      (draftPanel!.compareDocumentPosition(placeResults!) & Node.DOCUMENT_POSITION_FOLLOWING) > 0,
+    ).toBe(true);
 
     component.draftStore.initializeDraft('amsterdam', 'Amsterdam');
     component.draftStore.addPlaces('amsterdam', 'Amsterdam', ['amsterdam-museum'], AMSTERDAM_PLACES);
@@ -290,6 +386,7 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('1');
     expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('stop');
     expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft');
+    expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft for Amsterdam');
     expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
     expect((harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement)
       .getAttribute('href')).toBe('/plans/new?city=amsterdam');
@@ -398,6 +495,13 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
     addAll.click();
     expect(component.draftFeedback()).toBe('Already in plan.');
+
+    selectedTheme.click();
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.activeDiscoverTheme()).toBeNull();
+    expect(component.discoverPlaceIds()).toEqual([]);
+    expect(harness.routeNativeElement?.querySelector('.discover-results')).toBeNull();
   });
 
   it('shows an accessible empty state when a Discover theme has no verified matches', async () => {

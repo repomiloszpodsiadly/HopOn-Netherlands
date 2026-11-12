@@ -55,6 +55,8 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+@keyframes map-spin { to { transform: rotate(360deg); } }
+
 button,
 input,
 select,
@@ -83,6 +85,13 @@ textarea:focus-visible,
   .maplibregl-map .maplibregl-ctrl-attrib {
     max-width: min(78vw, 320px);
     background: rgb(255 255 255 / 94%);
+  }
+}
+
+@media (max-width: 760px) {
+  .maplibregl-map .maplibregl-ctrl-group button {
+    width: var(--target-min);
+    height: var(--target-min);
   }
 }
 

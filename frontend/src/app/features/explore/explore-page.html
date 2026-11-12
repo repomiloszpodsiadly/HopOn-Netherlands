@@ -211,82 +211,6 @@
       }
     </section>
 
-    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
-      <div class="place-results__heading">
-        <div>
-          <p class="eyebrow eyebrow--small">{{ currentCityName().toUpperCase() }}</p>
-          <h2 id="places-title">Places to explore</h2>
-        </div>
-        @if (placesLoading()) {
-          <span class="result-count" role="status">Loading…</span>
-        } @else {
-          <span class="result-count" aria-live="polite">{{ resultCount() }} places</span>
-        }
-      </div>
-
-      @if (placesLoading()) {
-        <div class="place-skeleton-list" role="status" aria-label="Loading places">
-          @for (item of [1, 2, 3, 4]; track item) {
-            <div class="place-skeleton" aria-hidden="true">
-              <span></span><span></span><span></span>
-            </div>
-          }
-        </div>
-      } @else if (placesError(); as error) {
-        <div class="state-card state-card--error" role="alert">
-          <span class="state-card__icon" aria-hidden="true">!</span>
-          <h3>Could not load places</h3>
-          <p>{{ error }}</p>
-          <button class="button button--primary" type="button" (click)="retryPlaces()">Retry</button>
-        </div>
-      } @else if (resultCount() === 0) {
-        <div class="state-card" role="status">
-          <span class="state-card__icon" aria-hidden="true">⌕</span>
-          <h3>No places found</h3>
-          <p>Try a different search or clear your filters.</p>
-          @if (hasActiveFilters()) {
-            <button class="button button--secondary" type="button" (click)="clearFilters()">Clear filters</button>
-          }
-        </div>
-      } @else {
-        <div class="place-list" aria-label="Places in {{ currentCityName() }}">
-          @for (place of visiblePlaces(); track place.id) {
-            <button
-              class="place-card"
-              [class.place-card--selected]="selectedPlaceId() === place.id"
-              [class.place-card--discover]="discoverPlaceIds().includes(place.id)"
-              [attr.aria-pressed]="selectedPlaceId() === place.id"
-              type="button"
-              (click)="selectPlace(place.id, $event.currentTarget)"
-            >
-              <span class="place-card__marker" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
-              </span>
-              <span class="place-card__content">
-                <span class="place-card__eyebrow">{{ categoryLabels[place.category] }}</span>
-                <span class="place-card__name">{{ place.name }}</span>
-                <span class="place-card__description">{{ place.shortDescription }}</span>
-                  @if (discoverPlaceIds().includes(place.id)) {
-                    <span class="place-card__discover-tag">Discover pick</span>
-                  }
-                <span class="place-card__tags">
-                  @for (tag of place.tags.slice(0, 2); track tag) {
-                    <span>{{ displayTag(tag) }}</span>
-                  }
-                </span>
-              </span>
-            </button>
-          }
-        </div>
-        @if (hasMorePlaces()) {
-          <button class="show-more" type="button" (click)="showMorePlaces()">
-            Show more places
-            <span>({{ resultCount() - visiblePlaceLimit() }} remaining)</span>
-          </button>
-        }
-      }
-    </section>
-
     <aside class="draft-panel" aria-labelledby="draft-panel-title">
       <div class="draft-panel__heading">
         <div>
@@ -307,9 +231,9 @@
         </div>
       } @else if (draftStore.draft(); as draft) {
         <p class="draft-name">{{ draft.name }}</p>
-        <p class="draft-copy">Temporary tab draft &middot; not saved to the server.</p>
+        <p class="draft-copy">Temporary tab draft for {{ draftCityName() }} &middot; not saved to the server.</p>
       } @else {
-        <p class="draft-copy">No stops yet. Start a tab draft from Explore or Discover, then review it before saving.</p>
+        <p class="draft-copy">No stops yet for {{ currentCityName() }}. Start a tab draft from Explore or Discover, then review it before saving.</p>
       }
       @if (draftStore.storageUnavailable()) {
         <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
@@ -324,7 +248,7 @@
         <section class="draft-conflict" role="region" aria-labelledby="draft-conflict-title">
           <h3 #draftConflictHeading id="draft-conflict-title" tabindex="-1">Keep the existing draft?</h3>
           <p>
-            This tab has a {{ draftStore.draft()?.cityId }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?
+            This tab has a {{ draftCityName() }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?
           </p>
           <div class="draft-conflict__actions">
             <button class="button button--secondary" type="button" (click)="keepExistingDraft()">Keep existing</button>
@@ -342,6 +266,29 @@
         {{ draftStore.draft() ? 'Review and save draft' : 'Start a day plan' }}
       </a>
     </aside>
+
+    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
+      <div class="place-results__heading">
+        <div>
+          <p class="eyebrow eyebrow--small">{{ currentCityName().toUpperCase() }}</p>
+          <h2 id="places-title">Places to explore</h2>
+        </div>
+        @if (placesLoading()) {
+          <span class="result-count" role="status">Loading places</span>
+        } @else {
+          <span class="result-count" aria-live="polite">{{ resultCountLabel() }}</span>
+        }
+      </div>
+
+      <app-place-results-list
+        [view]="placeResultsView()"
+        (placeSelected)="selectPlace($event.placeId, $event.trigger)"
+        (retryRequested)="retryPlaces()"
+        (clearFiltersRequested)="clearFilters()"
+        (showMoreRequested)="showMorePlaces()"
+      />
+    </section>
+
   </main>
 
   <footer class="footer-note">

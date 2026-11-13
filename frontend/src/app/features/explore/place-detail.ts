@@ -31,7 +31,9 @@ export class PlaceDetailComponent implements OnChanges {
   @Input({ required: true }) categoryLabel!: string;
   @Input() nearbyHubs: readonly NearbyHub[] = [];
   @Input() hubsLoading = false;
+  @Input() hubsRefreshing = false;
   @Input() hubsError: string | null = null;
+  @Input() hubCatalogLoaded = false;
   @Input() draftContainsPlace = false;
   @Output() readonly closed = new EventEmitter<void>();
   @Output() readonly addPlace = new EventEmitter<AddPlaceEvent>();

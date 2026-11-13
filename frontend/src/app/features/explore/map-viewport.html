@@ -7,13 +7,13 @@
     [attr.data-map-places-ready]="placesRendered()"
     role="region"
     tabindex="-1"
-    [attr.aria-label]="'Interactive map of ' + city.name"
+    [attr.aria-label]="'Interactive map of Amsterdam, Rotterdam and Utrecht'"
   ></div>
 
   @if (!mapReady() && !mapUnavailable()) {
     <div class="map-viewport__loading" role="status" aria-live="polite">
       <span class="map-viewport__spinner" aria-hidden="true"></span>
-      <span>Loading the map for {{ city.name }}…</span>
+      <span>Loading the map for three Dutch cities…</span>
     </div>
   }
 

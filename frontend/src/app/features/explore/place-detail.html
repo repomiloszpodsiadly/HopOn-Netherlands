@@ -55,15 +55,22 @@
       <span>CURATED</span>
     </div>
     @if (hubsLoading) {
-      <p class="nearby-message" role="status">Checking nearby hubs&#8230;</p>
-    } @else if (hubsError; as error) {
+      <p class="nearby-message" role="status">Checking nearby hubs in {{ cityName }}&#8230;</p>
+    }
+    @if (hubsRefreshing) {
+      <p class="nearby-message" role="status">Refreshing hub information for {{ cityName }}&#8230;</p>
+    }
+    @if (hubsError; as error) {
       <div class="nearby-error" role="alert">
-        <p>{{ error }}</p>
+        <p>Hub information unavailable for {{ cityName }}. {{ error }}
+          @if (hubCatalogLoaded) { The last loaded catalog is still in use. }
+        </p>
         <button class="text-button" type="button" (click)="retryHubs.emit()">Retry</button>
       </div>
-    } @else if (nearbyHubs.length === 0) {
-      <p class="nearby-message">No curated nearby hub listed.</p>
-    } @else {
+    }
+    @if (hubCatalogLoaded && nearbyHubs.length === 0) {
+      <p class="nearby-message">No curated nearby hub listed in the loaded {{ cityName }} catalog.</p>
+    } @else if (nearbyHubs.length > 0) {
       <ul class="nearby-list">
         @for (nearby of nearbyHubs; track nearby.hub.id) {
           <li>

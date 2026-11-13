@@ -16,7 +16,7 @@ import { ExplorePage } from './explore-page';
   template: '<div></div>',
 })
 class MapViewportStub {
-  @Input({ required: true }) city!: CityDto;
+  @Input({ required: true }) cities!: readonly CityDto[];
   @Input() places: readonly PlaceDto[] = [];
   @Input() selectedPlaceId: string | null = null;
   @Input() discoverPlaceIds: readonly string[] = [];
@@ -85,6 +85,29 @@ const HUBS: readonly MobilityHubDto[] = [
   },
 ];
 
+const ROTTERDAM_PLACES: readonly PlaceDto[] = [
+  FEATURED_PLACES[1],
+  {
+    ...AMSTERDAM_PLACES[0], id: 'rotterdam-museum', cityId: 'rotterdam', name: 'Rotterdam Museum',
+  },
+];
+
+const UTRECHT_PLACES: readonly PlaceDto[] = [
+  FEATURED_PLACES[2],
+  {
+    ...AMSTERDAM_PLACES[0], id: 'utrecht-museum', cityId: 'utrecht', name: 'Utrecht Museum',
+  },
+];
+
+type CityId = CityDto['id'];
+type PlacesByCity = Partial<Record<CityId, readonly PlaceDto[]>>;
+
+const DEFAULT_TEST_PLACES: PlacesByCity = {
+  amsterdam: [...AMSTERDAM_PLACES, FEATURED_PLACES[0]],
+  rotterdam: ROTTERDAM_PLACES,
+  utrecht: UTRECHT_PLACES,
+};
+
 function placesRequest(http: HttpTestingController, cityId: string): TestRequest {
   return http.expectOne(
     (request) => request.url === '/api/places' && request.params.get('cityId') === cityId,
@@ -95,6 +118,35 @@ function stopsRequest(http: HttpTestingController, cityId: string): TestRequest 
   return http.expectOne(
     (request) => request.url === '/api/stops' && request.params.get('cityId') === cityId,
   );
+}
+
+function flushPlaces(http: HttpTestingController, placesByCity: PlacesByCity = {}): void {
+  for (const city of CITIES) {
+    placesRequest(http, city.id).flush(placesByCity[city.id] ?? []);
+  }
+}
+
+function discoverRequest(http: HttpTestingController, cityId: CityId, theme: string): TestRequest {
+  return http.expectOne(
+    (request) => request.url === '/api/discover'
+      && request.params.get('cityId') === cityId
+      && request.params.get('theme') === theme,
+  );
+}
+
+function flushDiscover(
+  http: HttpTestingController,
+  theme: string,
+  placeIdsByCity: PlacesByCity,
+): void {
+  for (const city of CITIES) {
+    discoverRequest(http, city.id, theme).flush({
+      cityId: city.id,
+      theme,
+      description: `${theme} highlights in ${city.name}.`,
+      placeIds: (placeIdsByCity[city.id] ?? []).map((place) => place.id),
+    });
+  }
 }
 
 describe('ExplorePage', () => {
@@ -114,19 +166,34 @@ describe('ExplorePage', () => {
   });
 
   afterEach(() => {
-    TestBed.inject(HttpTestingController).verify({ ignoreCancelled: true });
+    TestBed.inject(HttpTestingController).verify();
     sessionStorage.removeItem(DRAFT_PLAN_STORAGE_KEY);
   });
 
-  async function startPage(url: string, hubData?: readonly MobilityHubDto[]) {
+  async function startPage(
+    url = '/',
+    options: {
+      hubs?: readonly MobilityHubDto[];
+      places?: PlacesByCity;
+      deferHubs?: boolean;
+      deferPlaces?: boolean;
+    } = {},
+  ) {
     const harness = await RouterTestingHarness.create(url);
     const http = TestBed.inject(HttpTestingController);
     const healthRequest = http.expectOne('/api/health');
     healthRequest.flush({ status: 'UP', service: 'hopon-api' });
     http.expectOne('/api/cities').flush(CITIES);
-    const queryCity = new URL(url, 'http://localhost').searchParams.get('city');
-    const cityId = queryCity === 'rotterdam' || queryCity === 'utrecht' ? queryCity : 'amsterdam';
-    stopsRequest(http, cityId).flush(hubData ?? HUBS.filter((hub) => hub.cityId === cityId));
+    if (!options.deferHubs) {
+      for (const city of CITIES) {
+        stopsRequest(http, city.id).flush(
+          (options.hubs ?? HUBS).filter((hub) => hub.cityId === city.id),
+        );
+      }
+    }
+    if (!options.deferPlaces) {
+      flushPlaces(http, options.places ?? DEFAULT_TEST_PLACES);
+    }
     await harness.fixture.whenStable();
     harness.detectChanges();
     return {
@@ -136,16 +203,20 @@ describe('ExplorePage', () => {
     };
   }
 
-  it('defaults to Amsterdam, canonicalizes the URL, and renders city places', async () => {
-    const { harness, http, component } = await startPage('/');
-    const request = placesRequest(http, 'amsterdam');
-    request.flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+  it('loads all three city catalogs together without a city selector', async () => {
+    const { harness, component } = await startPage('/');
     harness.detectChanges();
 
-    expect(component.selectedCityId()).toBe('amsterdam');
-    expect(TestBed.inject(Router).url).toContain('city=amsterdam');
-    expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(3);
+    expect(component.places()).toHaveLength(
+      AMSTERDAM_PLACES.length + 1 + ROTTERDAM_PLACES.length + UTRECHT_PLACES.length,
+    );
+    expect(component.filteredPlaces()).toEqual(component.places());
+    expect(TestBed.inject(Router).url).toBe('/');
+    expect(harness.routeNativeElement?.querySelector('#city-select')).toBeNull();
+    expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(component.places().length);
+    expect(harness.routeNativeElement?.textContent).toContain('Amsterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Rotterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Utrecht');
     expect(harness.routeNativeElement?.querySelector('nav[aria-label="Main navigation"]')).toBeTruthy();
   });
 
@@ -166,16 +237,17 @@ describe('ExplorePage', () => {
       smallPath: '/assets/catalog/dom-tower-utrecht-640.jpg', author: 'tED', license: 'CC BY 2.0',
     },
   ] as const)('features the correctly attributed $name in $cityId', async (example) => {
-    const { harness, http } = await startPage(`/?city=${example.cityId}`);
-    placesRequest(http, example.cityId).flush([
-      ...FEATURED_PLACES.filter((place) => place.cityId === example.cityId),
-      {
-        id: `${example.cityId}-ordinary-place`, cityId: example.cityId, name: 'A nearby place',
-        category: 'LANDMARKS', latitude: 52, longitude: 5, tags: [], shortDescription: 'Another mapped place.',
-        imagePath: null, imageAttributionId: null,
-      },
-    ]);
-    await harness.fixture.whenStable();
+    const places: PlacesByCity = {
+      [example.cityId]: [
+        ...FEATURED_PLACES.filter((place) => place.cityId === example.cityId),
+        {
+          id: `${example.cityId}-ordinary-place`, cityId: example.cityId, name: 'A nearby place',
+          category: 'LANDMARKS', latitude: 52, longitude: 5, tags: [], shortDescription: 'Another mapped place.',
+          imagePath: null, imageAttributionId: null,
+        },
+      ],
+    };
+    const { harness } = await startPage('/', { places });
     harness.detectChanges();
 
     const cards = harness.routeNativeElement?.querySelectorAll('.place-card');
@@ -202,9 +274,9 @@ describe('ExplorePage', () => {
   });
 
   it('keeps a featured place selectable when its local photo fails to load', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush([FEATURED_PLACES[0]]);
-    await harness.fixture.whenStable();
+    const { harness, component } = await startPage('/', {
+      places: { amsterdam: [FEATURED_PLACES[0]] },
+    });
     harness.detectChanges();
 
     const image = harness.routeNativeElement?.querySelector('.place-card__image') as HTMLImageElement;
@@ -220,56 +292,47 @@ describe('ExplorePage', () => {
     expect(component.selectedPlaceId()).toBe(FEATURED_PLACES[0].id);
   });
 
-  it('replaces an invalid city query with the Amsterdam default', async () => {
-    const { harness, http } = await startPage('/?city=haarlem');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+  it('removes a legacy city query without showing the removed selector', async () => {
+    const { harness } = await startPage('/?city=haarlem');
+    harness.detectChanges();
+
+    expect(TestBed.inject(Router).url).toBe('/');
+    expect(harness.routeNativeElement?.querySelector('#city-select')).toBeNull();
+  });
+
+  it('links to the shared map and focuses it on first and repeated navigation', async () => {
+    const { harness } = await startPage('/');
+    harness.detectChanges();
+
+    const target = harness.routeNativeElement?.querySelector<HTMLElement>('#map-region');
+    const mapLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
+      '.bottom-nav__item[href$="#map-region"]',
+    );
+    expect(target).not.toBeNull();
+    expect(mapLink?.getAttribute('href')).toBe('/#map-region');
+    const scrollIntoView = vi.fn();
+    Object.defineProperty(target, 'scrollIntoView', { value: scrollIntoView, configurable: true });
+
+    mapLink!.click();
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(TestBed.inject(Router).url).toContain('city=amsterdam');
-    expect(harness.routeNativeElement?.querySelector('#city-select')).toBeTruthy();
+    expect(TestBed.inject(Router).url).toBe('/#map-region');
+    expect(document.activeElement).toBe(target);
+    expect(scrollIntoView).toHaveBeenCalledOnce();
+
+    mapLink!.click();
+    await harness.fixture.whenStable();
+    expect(TestBed.inject(Router).url).toBe('/#map-region');
+    expect(document.activeElement).toBe(target);
+    expect(scrollIntoView).toHaveBeenCalledTimes(2);
   });
-
-  it.each(['rotterdam', 'utrecht'] as const)(
-    'keeps %s selected and focuses the map on first and repeated Map navigation',
-    async (cityId) => {
-      const { harness, http } = await startPage(`/?city=${cityId}`);
-      placesRequest(http, cityId).flush([]);
-      await harness.fixture.whenStable();
-      harness.detectChanges();
-
-      const target = harness.routeNativeElement?.querySelector<HTMLElement>('#map-region');
-      const mapLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
-        '.bottom-nav__item[href$="#map-region"]',
-      );
-      expect(target).not.toBeNull();
-      expect(mapLink).not.toBeNull();
-      const scrollIntoView = vi.fn();
-      Object.defineProperty(target, 'scrollIntoView', { value: scrollIntoView, configurable: true });
-
-      mapLink!.click();
-      await harness.fixture.whenStable();
-      harness.detectChanges();
-
-      expect(TestBed.inject(Router).url).toBe(`/?city=${cityId}#map-region`);
-      expect(document.activeElement).toBe(target);
-      expect(scrollIntoView).toHaveBeenCalledOnce();
-
-      mapLink!.click();
-      await harness.fixture.whenStable();
-      expect(TestBed.inject(Router).url).toBe(`/?city=${cityId}#map-region`);
-      expect(document.activeElement).toBe(target);
-      expect(scrollIntoView).toHaveBeenCalledTimes(2);
-    },
-  );
 
   it.each([
     { reducedMotion: true, behavior: 'auto' },
     { reducedMotion: false, behavior: 'smooth' },
   ])('browses places with $behavior scrolling for reducedMotion=$reducedMotion', async ({ reducedMotion, behavior }) => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness, component } = await startPage('/');
     harness.detectChanges();
 
     const placeResults = harness.routeNativeElement?.querySelector('.place-results') as HTMLElement;
@@ -290,9 +353,7 @@ describe('ExplorePage', () => {
   });
 
   it('routes the map Browse Places event through the motion-aware page handler', async () => {
-    const { harness, http } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness } = await startPage('/');
     harness.detectChanges();
 
     const placeResults = harness.routeNativeElement?.querySelector('.place-results') as HTMLElement;
@@ -313,62 +374,149 @@ describe('ExplorePage', () => {
     }
   });
 
-  it('loads a directly requested city and changes city through the accessible selector', async () => {
-    const { harness, http, component } = await startPage('/?city=rotterdam');
+  it.each([FEATURED_PLACES[1], FEATURED_PLACES[2]])(
+    'selects the shared $cityId catalog card and shows its city details',
+    async (place) => {
+      const { harness, component } = await startPage('/');
+      harness.detectChanges();
+      const card = Array.from(harness.routeNativeElement?.querySelectorAll<HTMLButtonElement>('.place-card') ?? [])
+        .find((candidate) => candidate.textContent?.includes(place.name));
+
+      expect(card).toBeTruthy();
+      card!.click();
+      await harness.fixture.whenStable();
+      harness.detectChanges();
+
+      expect(component.selectedPlace()?.id).toBe(place.id);
+      expect(component.selectedPlace()?.cityId).toBe(place.cityId);
+      expect(card?.querySelector('.place-card__city')?.textContent?.trim()).toBe(
+        place.cityId === 'rotterdam' ? 'Rotterdam' : 'Utrecht',
+      );
+      expect(harness.routeNativeElement?.querySelector('#place-detail-title')?.textContent).toContain(place.name);
+      expect(harness.routeNativeElement?.textContent).toContain(place.cityId === 'rotterdam' ? 'Rotterdam' : 'Utrecht');
+      const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
+      expect(map.cities).toEqual(CITIES);
+      expect(map.selectedPlaceId).toBe(place.id);
+    },
+  );
+
+  it('renders each city catalog as it arrives and keeps successful data usable during a partial failure', async () => {
+    const { harness, http, component } = await startPage('/', { deferPlaces: true });
+    const amsterdamRequest = placesRequest(http, 'amsterdam');
     const rotterdamRequest = placesRequest(http, 'rotterdam');
-    rotterdamRequest.flush([
-      { ...AMSTERDAM_PLACES[0], id: 'rotterdam-place', cityId: 'rotterdam' },
-    ]);
-    await harness.fixture.whenStable();
-    harness.detectChanges();
-    expect(harness.routeNativeElement?.querySelector('#places-title')?.textContent).toContain('Places');
-
-    const selector = harness.routeNativeElement?.querySelector('#city-select') as HTMLSelectElement;
-    component.selectPlace('rotterdam-place');
-    selector.value = 'utrecht';
-    selector.dispatchEvent(new Event('change'));
-    await harness.fixture.whenStable();
     const utrechtRequest = placesRequest(http, 'utrecht');
-    utrechtRequest.flush([]);
-    stopsRequest(http, 'utrecht').flush(HUBS.filter((hub) => hub.cityId === 'utrecht'));
+
+    expect(CITIES.every((city) => component.placeCityStates()[city.id].status === 'loading')).toBe(true);
+    amsterdamRequest.flush(AMSTERDAM_PLACES);
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(TestBed.inject(Router).url).toContain('city=utrecht');
-    expect(selector.value).toBe('utrecht');
-    expect(component.selectedPlaceId()).toBeNull();
+    expect(component.placeCityStates().amsterdam).toMatchObject({ status: 'success', data: AMSTERDAM_PLACES });
+    expect(component.placeCityStates().rotterdam.status).toBe('loading');
+    expect(component.placeCityStates().utrecht.status).toBe('loading');
+    expect(component.placesLoading()).toBe(false);
+    expect(component.places()).toEqual(AMSTERDAM_PLACES);
+    expect(harness.routeNativeElement?.querySelector('.place-skeleton-list')).toBeNull();
+    expect(harness.routeNativeElement?.textContent).toContain('Loading places for Rotterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Loading places for Utrecht');
+
+    const search = harness.routeNativeElement?.querySelector<HTMLInputElement>('#place-search');
+    search!.value = 'Amsterdam Museum';
+    search!.dispatchEvent(new Event('input'));
+    harness.detectChanges();
+    expect(component.filteredPlaces().map((place) => place.name)).toEqual(['Amsterdam Museum']);
     const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
-    expect(map.city.id).toBe('utrecht');
+    expect(map.places).toEqual(component.filteredPlaces());
+
+    rotterdamRequest.flush(
+      { status: 503, detail: 'Rotterdam catalog is temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.placeCityStates().rotterdam).toMatchObject({ status: 'error', data: null });
+    expect(component.placeCityStates().utrecht.status).toBe('loading');
+    expect(component.placesWarning()).toContain('Rotterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Places unavailable for Rotterdam');
+    expect(component.filteredPlaces()).toEqual([AMSTERDAM_PLACES[0]]);
+
+    utrechtRequest.flush(UTRECHT_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.placeCityStates().utrecht).toMatchObject({ status: 'success', data: UTRECHT_PLACES });
+    expect(component.places()).toEqual([...AMSTERDAM_PLACES, ...UTRECHT_PLACES]);
+    expect(component.placesLoading()).toBe(false);
   });
 
-  it('cancels stale city requests during a quick Amsterdam to Rotterdam to Utrecht switch', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    const amsterdamRequest = placesRequest(http, 'amsterdam');
-
-    await TestBed.inject(Router).navigateByUrl('/?city=rotterdam');
-    const rotterdamRequest = placesRequest(http, 'rotterdam');
-    const rotterdamHubsRequest = stopsRequest(http, 'rotterdam');
-    await TestBed.inject(Router).navigateByUrl('/?city=utrecht');
-    const utrechtRequest = placesRequest(http, 'utrecht');
-    const utrechtHubsRequest = stopsRequest(http, 'utrecht');
-    expect(amsterdamRequest.cancelled).toBe(true);
-    expect(rotterdamRequest.cancelled).toBe(true);
-    expect(rotterdamHubsRequest.cancelled).toBe(true);
-
-    const utrechtPlace = { ...AMSTERDAM_PLACES[0], id: 'utrecht-place', cityId: 'utrecht' as const };
-    utrechtRequest.flush([utrechtPlace]);
-    utrechtHubsRequest.flush(HUBS.filter((hub) => hub.cityId === 'utrecht'));
+  it('cancels old city requests on retry and retains the last successful catalog after refresh failure', async () => {
+    const { harness, http, component } = await startPage('/', { deferPlaces: true });
+    const oldAmsterdamRequest = placesRequest(http, 'amsterdam');
+    const oldRotterdamRequest = placesRequest(http, 'rotterdam');
+    const oldUtrechtRequest = placesRequest(http, 'utrecht');
+    oldAmsterdamRequest.flush(AMSTERDAM_PLACES);
+    oldRotterdamRequest.flush(
+      { status: 503, detail: 'Rotterdam catalog is temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
     await harness.fixture.whenStable();
     harness.detectChanges();
-    expect(component.selectedCityId()).toBe('utrecht');
-    expect(component.places().map((place) => place.id)).toEqual(['utrecht-place']);
+
+    const retryButton = harness.routeNativeElement?.querySelector<HTMLButtonElement>(
+      '.city-catalog-status__item--error button',
+    );
+    retryButton!.click();
+    harness.detectChanges();
+    expect(oldUtrechtRequest.cancelled).toBe(true);
+    expect(component.placeCityStates().amsterdam).toMatchObject({ status: 'loading', data: AMSTERDAM_PLACES });
+    expect(component.places()).toEqual(AMSTERDAM_PLACES);
+
+    const newAmsterdamRequest = placesRequest(http, 'amsterdam');
+    const newRotterdamRequest = placesRequest(http, 'rotterdam');
+    const newUtrechtRequest = placesRequest(http, 'utrecht');
+    newAmsterdamRequest.flush(
+      { status: 503, detail: 'Amsterdam refresh is temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    newRotterdamRequest.flush(ROTTERDAM_PLACES);
+    newUtrechtRequest.flush(UTRECHT_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(component.placeCityStates().amsterdam).toMatchObject({ status: 'error', data: AMSTERDAM_PLACES });
+    expect(component.places()).toEqual([...AMSTERDAM_PLACES, ...ROTTERDAM_PLACES, ...UTRECHT_PLACES]);
+    expect(harness.routeNativeElement?.textContent).toContain('showing the last loaded catalog');
+  });
+
+  it('keeps successful city cards usable and reports one failed city catalog', async () => {
+    const { harness, http, component } = await startPage('/', { deferPlaces: true });
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    placesRequest(http, 'rotterdam').flush(ROTTERDAM_PLACES);
+    placesRequest(http, 'utrecht').flush(
+      { status: 503, detail: 'Utrecht catalog is temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(component.places()).toEqual([...AMSTERDAM_PLACES, ...ROTTERDAM_PLACES]);
+    expect(component.placesError()).toBeNull();
+    expect(component.placesWarning()).toContain('Utrecht');
+    expect(harness.routeNativeElement?.querySelector('.catalog-warning--map')?.textContent)
+      .toContain('Utrecht');
     expect(harness.routeNativeElement?.textContent).toContain('Amsterdam Museum');
+    expect(harness.routeNativeElement?.textContent).toContain('Rotterdam Museum');
+    const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
+    expect(map.places).toEqual(component.filteredPlaces());
   });
 
   it('combines text and category filters and sends the same filtered list to the map', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness, component } = await startPage('/', {
+      places: {
+        amsterdam: AMSTERDAM_PLACES,
+        rotterdam: [ROTTERDAM_PLACES[1]],
+        utrecht: [UTRECHT_PLACES[1]],
+      },
+    });
     harness.detectChanges();
 
     const search = harness.routeNativeElement?.querySelector('#place-search') as HTMLInputElement;
@@ -381,22 +529,20 @@ describe('ExplorePage', () => {
     museumsButton?.click();
     harness.detectChanges();
 
-    const expected = [AMSTERDAM_PLACES[0], AMSTERDAM_PLACES[2]];
+    const expected = [AMSTERDAM_PLACES[0], AMSTERDAM_PLACES[2], ROTTERDAM_PLACES[1], UTRECHT_PLACES[1]];
     const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
     expect(component.filteredPlaces()).toEqual(expected);
     expect(map.places).toBe(component.filteredPlaces());
-    expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(2);
-    expect(harness.routeNativeElement?.querySelector('.result-count')?.textContent).toContain('2 places');
+    expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(4);
+    expect(harness.routeNativeElement?.querySelector('.result-count')?.textContent).toContain('4 places');
     expect(search.ownerDocument.activeElement).toBe(search);
   });
 
   it('keeps all filtered map points while revealing list cards in batches', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
     const manyPlaces = Array.from({ length: 45 }, (_, index) => ({
       ...AMSTERDAM_PLACES[0], id: `place-${index}`,
     }));
-    placesRequest(http, 'amsterdam').flush(manyPlaces);
-    await harness.fixture.whenStable();
+    const { harness, component } = await startPage('/', { places: { amsterdam: manyPlaces } });
     harness.detectChanges();
 
     const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
@@ -409,9 +555,7 @@ describe('ExplorePage', () => {
   });
 
   it('shows the temporary draft count and keeps its city when linking to the editor', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness, component } = await startPage('/', { places: { amsterdam: AMSTERDAM_PLACES } });
     harness.detectChanges();
 
     const count = harness.routeNativeElement?.querySelector('.draft-count');
@@ -420,17 +564,15 @@ describe('ExplorePage', () => {
     const editorLink = harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement;
     expect(count?.textContent).toContain('0');
     expect(count?.textContent).toContain('stops');
-    expect(harness.routeNativeElement?.textContent).toContain('No stops yet for Amsterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Plan a day in one city.');
     expect(editorLink.getAttribute('href')).toBe('/plans/new?city=amsterdam');
     expect(draftPanel).not.toBeNull();
     expect(placeResults).not.toBeNull();
-    expect(
-      (draftPanel!.compareDocumentPosition(placeResults!) & Node.DOCUMENT_POSITION_FOLLOWING) > 0,
-    ).toBe(true);
+    expect(placeResults!.closest('.explore-sidebar')).not.toBeNull();
+    expect(draftPanel!.closest('.map-column')).not.toBeNull();
 
     component.draftStore.initializeDraft('amsterdam', 'Amsterdam');
     component.draftStore.addPlaces('amsterdam', 'Amsterdam', ['amsterdam-museum'], AMSTERDAM_PLACES);
-    component.selectedCityId.set('rotterdam');
     harness.detectChanges();
 
     expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('1');
@@ -438,14 +580,13 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft');
     expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft for Amsterdam');
     expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
+    expect(component.draftEditorCityId()).toBe('amsterdam');
     expect((harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement)
       .getAttribute('href')).toBe('/plans/new?city=amsterdam');
   });
 
   it('opens the same place from a card or map marker and restores focus on Escape', async () => {
-    const { harness, http } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness } = await startPage('/', { places: { amsterdam: AMSTERDAM_PLACES } });
     harness.detectChanges();
 
     const firstCard = harness.routeNativeElement?.querySelector('.place-card') as HTMLButtonElement;
@@ -485,35 +626,66 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelector('#place-detail-title')?.textContent).toContain('Van Gogh Museum');
   });
 
-  it('reports no curated nearby hub without implying transit is unavailable', async () => {
-    const { harness, http } = await startPage('/?city=amsterdam', []);
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+  it('shows a selected city hub failure and recovers its nearby hubs on retry', async () => {
+    const { harness, http, component } = await startPage('/', { deferHubs: true });
+    const amsterdamRequest = stopsRequest(http, 'amsterdam');
+    const rotterdamRequest = stopsRequest(http, 'rotterdam');
+    const utrechtRequest = stopsRequest(http, 'utrecht');
+    amsterdamRequest.flush(HUBS.filter((hub) => hub.cityId === 'amsterdam'));
+    rotterdamRequest.flush(HUBS.filter((hub) => hub.cityId === 'rotterdam'));
+    component.selectPlace(FEATURED_PLACES[2].id);
     await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.selectedHubState()?.status).toBe('loading');
+    expect(harness.routeNativeElement?.textContent).toContain('Checking nearby hubs in Utrecht');
+
+    utrechtRequest.flush(
+      { status: 503, detail: 'Utrecht hub catalog is temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.selectedHubState()).toMatchObject({ status: 'error', data: null });
+    expect(harness.routeNativeElement?.textContent).toContain('Hub information unavailable for Utrecht');
+    expect(harness.routeNativeElement?.textContent).not.toContain('No curated nearby hub listed.');
+
+    (harness.routeNativeElement?.querySelector('.nearby-error button') as HTMLButtonElement).click();
+    harness.detectChanges();
+    for (const city of CITIES) {
+      stopsRequest(http, city.id).flush(HUBS.filter((hub) => hub.cityId === city.id));
+    }
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.selectedHubState()).toMatchObject({ status: 'success', data: [HUBS[3]] });
+    expect(harness.routeNativeElement?.querySelector('.nearby-error')).toBeNull();
+    expect(harness.routeNativeElement?.querySelector('.nearby-list')?.textContent).toContain('Utrecht Central');
+  });
+
+  it('reports no curated nearby hub without implying transit is unavailable', async () => {
+    const { harness } = await startPage('/', { hubs: [], places: { amsterdam: AMSTERDAM_PLACES } });
     harness.detectChanges();
     (harness.routeNativeElement?.querySelector('.place-card') as HTMLButtonElement).click();
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(harness.routeNativeElement?.textContent).toContain('No curated nearby hub listed.');
+    expect(harness.routeNativeElement?.textContent)
+      .toContain('No curated nearby hub listed in the loaded Amsterdam catalog.');
     expect(harness.routeNativeElement?.textContent).not.toContain('no transit available');
   });
 
   it('loads deterministic Discover IDs, highlights the same places, and adds them idempotently', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
-    harness.detectChanges();
+    const { harness, http, component } = await startPage('/', {
+      places: {
+        amsterdam: AMSTERDAM_PLACES,
+        rotterdam: ROTTERDAM_PLACES,
+        utrecht: UTRECHT_PLACES,
+      },
+    });
     component.chooseDiscoverTheme('architecture');
-    const discoverRequest = http.expectOne(
-      (request) => request.url === '/api/discover'
-        && request.params.get('cityId') === 'amsterdam'
-        && request.params.get('theme') === 'architecture',
-    );
-    discoverRequest.flush({
-      cityId: 'amsterdam',
-      theme: 'architecture',
-      description: 'Architecture highlights selected from the verified catalog.',
-      placeIds: ['museumplein', 'van-gogh', 'museumplein', 'not-in-catalog'],
+    flushDiscover(http, 'architecture', {
+      amsterdam: [AMSTERDAM_PLACES[1], AMSTERDAM_PLACES[2], AMSTERDAM_PLACES[1]],
+      rotterdam: [ROTTERDAM_PLACES[1]],
+      utrecht: [UTRECHT_PLACES[1]],
     });
     await harness.fixture.whenStable();
     harness.detectChanges();
@@ -521,13 +693,17 @@ describe('ExplorePage', () => {
     const selectedTheme = Array.from(harness.routeNativeElement?.querySelectorAll('.discover-theme') ?? [])
       .find((button) => button.textContent?.includes('Architecture Hunt')) as HTMLButtonElement;
     expect(selectedTheme.getAttribute('aria-pressed')).toBe('true');
-    const expectedIds = ['museumplein', 'van-gogh'];
+    const expectedIds = ['museumplein', 'van-gogh', 'rotterdam-museum', 'utrecht-museum'];
     const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
     expect(component.discoverPlaceIds()).toEqual(expectedIds);
     expect(map.discoverPlaceIds).toEqual(expectedIds);
-    expect(harness.routeNativeElement?.querySelectorAll('.place-card--discover')).toHaveLength(2);
-    expect(harness.routeNativeElement?.textContent).toContain('2 verified places in Amsterdam');
-    expect(harness.routeNativeElement?.querySelector('.discover-count')?.textContent).toContain('in Amsterdam');
+    expect(component.discoverGroups().map((group) => [group.cityId, group.placeIds.length])).toEqual([
+      ['amsterdam', 2], ['rotterdam', 1], ['utrecht', 1],
+    ]);
+    expect(harness.routeNativeElement?.querySelectorAll('.place-card--discover')).toHaveLength(4);
+    expect(harness.routeNativeElement?.textContent).toContain('Amsterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Rotterdam');
+    expect(harness.routeNativeElement?.textContent).toContain('Utrecht');
 
     (harness.routeNativeElement?.querySelector('.discover-pick') as HTMLButtonElement).click();
     await harness.fixture.whenStable();
@@ -537,13 +713,13 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelector('#place-detail-title')?.textContent)
       .toContain('Museumplein');
 
-    const addAll = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
-      .find((button) => button.textContent?.trim() === 'Add all to plan') as HTMLButtonElement;
-    addAll.click();
-    expect(component.draftStore.draft()?.placeIds).toEqual(expectedIds);
+    const addAmsterdam = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
+      .find((button) => button.textContent?.trim() === 'Add Amsterdam picks to plan') as HTMLButtonElement;
+    addAmsterdam.click();
+    expect(component.draftStore.draft()?.placeIds).toEqual(['museumplein', 'van-gogh']);
     harness.detectChanges();
     expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
-    addAll.click();
+    addAmsterdam.click();
     expect(component.draftFeedback()).toBe('Already in plan.');
 
     selectedTheme.click();
@@ -554,25 +730,59 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelector('.discover-results')).toBeNull();
   });
 
-  it('retries a failed Discover request manually without deselecting its theme', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+  it('keeps Discover groups loading until their city catalog can verify returned place IDs', async () => {
+    const { harness, http, component } = await startPage('/', { deferPlaces: true });
+    component.chooseDiscoverTheme('culture');
+    const discoverRequests = CITIES.map((city) => discoverRequest(http, city.id, 'culture'));
+    discoverRequests.forEach((request, index) => request.flush({
+      cityId: CITIES[index].id,
+      theme: 'culture',
+      description: `${CITIES[index].name} culture.`,
+      placeIds: [[AMSTERDAM_PLACES[1]], [ROTTERDAM_PLACES[1]], [UTRECHT_PLACES[1]]][index]
+        .map((place) => place.id),
+    }));
     await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.discoverGroups().map((group) => group.status)).toEqual(['loading', 'loading', 'loading']);
+    expect(harness.routeNativeElement?.textContent).not.toContain('No verified places matched this theme here.');
+
+    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+    placesRequest(http, 'rotterdam').flush(ROTTERDAM_PLACES);
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.discoverGroups().map((group) => group.status)).toEqual(['success', 'success', 'loading']);
+    expect(component.discoverPlaceIds()).toEqual([AMSTERDAM_PLACES[1].id, ROTTERDAM_PLACES[1].id]);
+
+    placesRequest(http, 'utrecht').flush(
+      { status: 503, detail: 'Utrecht catalog is temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.discoverGroups()[2]).toMatchObject({
+      status: 'error',
+      error: 'Could not verify Utrecht picks because its place catalog is unavailable.',
+      placeIds: [],
+    });
+    expect(component.discoverState()).toBe('loaded');
+    expect(component.discoverWarning()).toContain('Utrecht');
+    expect(harness.routeNativeElement?.querySelector('.discover-city-group:last-child')?.textContent)
+      .toContain('Could not verify Utrecht picks');
+  });
+
+  it('retries a failed Discover request manually without deselecting its theme', async () => {
+    const { harness, http, component } = await startPage('/');
     harness.detectChanges();
 
     const architectureButton = Array.from(
       harness.routeNativeElement?.querySelectorAll('.discover-theme') ?? [],
     ).find((button) => button.textContent?.includes('Architecture Hunt')) as HTMLButtonElement;
     architectureButton.click();
-    const firstRequest = http.expectOne(
-      (request) => request.url === '/api/discover'
-        && request.params.get('cityId') === 'amsterdam'
-        && request.params.get('theme') === 'architecture',
-    );
-    firstRequest.flush(
+    const firstRequests = CITIES.map((city) => discoverRequest(http, city.id, 'architecture'));
+    firstRequests.forEach((request) => request.flush(
       { status: 500, detail: 'Discover is temporarily unavailable' },
       { status: 500, statusText: 'Server Error' },
-    );
+    ));
     await harness.fixture.whenStable();
     harness.detectChanges();
 
@@ -585,17 +795,12 @@ describe('ExplorePage', () => {
     harness.detectChanges();
     expect(component.activeDiscoverTheme()).toBe('architecture');
     expect(harness.routeNativeElement?.querySelector('.discover-results [role="status"]')?.textContent)
-      .toContain('Finding architecture places in Amsterdam');
-    const secondRequest = http.expectOne(
-      (request) => request.url === '/api/discover'
-        && request.params.get('cityId') === 'amsterdam'
-        && request.params.get('theme') === 'architecture',
-    );
-    expect(secondRequest).not.toBe(firstRequest);
-    secondRequest.flush(
+      .toContain('Finding architecture picks across all three cities');
+    const secondRequests = CITIES.map((city) => discoverRequest(http, city.id, 'architecture'));
+    secondRequests.forEach((request) => request.flush(
       { status: 503, detail: 'Discover is still unavailable' },
       { status: 503, statusText: 'Unavailable' },
-    );
+    ));
     await harness.fixture.whenStable();
     harness.detectChanges();
 
@@ -605,18 +810,7 @@ describe('ExplorePage', () => {
     http.expectNone((request) => request.url === '/api/discover');
 
     (harness.routeNativeElement?.querySelector('.discover-error button') as HTMLButtonElement).click();
-    const thirdRequest = http.expectOne(
-      (request) => request.url === '/api/discover'
-        && request.params.get('cityId') === 'amsterdam'
-        && request.params.get('theme') === 'architecture',
-    );
-    expect(thirdRequest).not.toBe(secondRequest);
-    thirdRequest.flush({
-      cityId: 'amsterdam',
-      theme: 'architecture',
-      description: 'Architecture highlights selected from the verified catalog.',
-      placeIds: ['museumplein', 'not-in-catalog'],
-    });
+    flushDiscover(http, 'architecture', { amsterdam: [AMSTERDAM_PLACES[1]] });
     await harness.fixture.whenStable();
     harness.detectChanges();
 
@@ -630,27 +824,78 @@ describe('ExplorePage', () => {
     http.expectNone((request) => request.url === '/api/discover');
   });
 
-  it('deselects a selected Discover theme and cancels its pending request', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
+  it('shows Discover groups progressively, reports one failed city, and recovers after retry', async () => {
+    const { harness, http, component } = await startPage('/');
+    component.chooseDiscoverTheme('architecture');
+    const amsterdamRequest = discoverRequest(http, 'amsterdam', 'architecture');
+    const rotterdamRequest = discoverRequest(http, 'rotterdam', 'architecture');
+    const utrechtRequest = discoverRequest(http, 'utrecht', 'architecture');
+    amsterdamRequest.flush({
+      cityId: 'amsterdam', theme: 'architecture', description: 'Amsterdam architecture.',
+      placeIds: [AMSTERDAM_PLACES[1].id],
+    });
+    rotterdamRequest.flush({
+      cityId: 'rotterdam', theme: 'architecture', description: 'Rotterdam architecture.',
+      placeIds: [ROTTERDAM_PLACES[1].id],
+    });
     await harness.fixture.whenStable();
+    harness.detectChanges();
+
+    expect(component.discoverState()).toBe('loading');
+    expect(component.discoverGroups().map((group) => [group.cityId, group.status])).toEqual([
+      ['amsterdam', 'success'], ['rotterdam', 'success'], ['utrecht', 'loading'],
+    ]);
+    expect(component.discoverPlaceIds()).toEqual([AMSTERDAM_PLACES[1].id, ROTTERDAM_PLACES[1].id]);
+    expect(harness.routeNativeElement?.textContent).toContain('Museumplein');
+    expect(harness.routeNativeElement?.textContent).toContain('Rotterdam Museum');
+    expect(harness.routeNativeElement?.textContent).toContain('Finding verified picks in Utrecht');
+
+    utrechtRequest.flush(
+      { status: 503, detail: 'Utrecht picks are temporarily unavailable' },
+      { status: 503, statusText: 'Unavailable' },
+    );
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.discoverState()).toBe('loaded');
+    expect(component.discoverGroups()[2]).toMatchObject({ status: 'error', placeIds: [] });
+    expect(component.discoverWarning()).toContain('Utrecht');
+    expect(harness.routeNativeElement?.querySelector('.discover-city-group:last-child')?.textContent)
+      .toContain('Utrecht picks are temporarily unavailable');
+
+    (harness.routeNativeElement?.querySelector('.discover-warning button') as HTMLButtonElement).click();
+    const retryRequests = CITIES.map((city) => discoverRequest(http, city.id, 'architecture'));
+    retryRequests.forEach((request, index) => request.flush({
+      cityId: CITIES[index].id,
+      theme: 'architecture',
+      description: `${CITIES[index].name} architecture.`,
+      placeIds: [[AMSTERDAM_PLACES[1]], [ROTTERDAM_PLACES[1]], [UTRECHT_PLACES[1]]][index]
+        .map((place) => place.id),
+    }));
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(component.discoverState()).toBe('loaded');
+    expect(component.discoverGroups().map((group) => group.status)).toEqual(['success', 'success', 'success']);
+    expect(component.discoverWarning()).toBeNull();
+    expect(component.discoverPlaceIds()).toEqual([
+      AMSTERDAM_PLACES[1].id, ROTTERDAM_PLACES[1].id, UTRECHT_PLACES[1].id,
+    ]);
+  });
+
+  it('deselects a selected Discover theme and cancels its pending request', async () => {
+    const { harness, http, component } = await startPage('/');
     harness.detectChanges();
 
     const architectureButton = Array.from(
       harness.routeNativeElement?.querySelectorAll('.discover-theme') ?? [],
     ).find((button) => button.textContent?.includes('Architecture Hunt')) as HTMLButtonElement;
     architectureButton.click();
-    const pendingRequest = http.expectOne(
-      (request) => request.url === '/api/discover'
-        && request.params.get('cityId') === 'amsterdam'
-        && request.params.get('theme') === 'architecture',
-    );
+    const pendingRequests = CITIES.map((city) => discoverRequest(http, city.id, 'architecture'));
 
     architectureButton.click();
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(pendingRequest.cancelled).toBe(true);
+    expect(pendingRequests.every((request) => request.cancelled)).toBe(true);
     expect(component.activeDiscoverTheme()).toBeNull();
     expect(component.discoverState()).toBe('idle');
     expect(component.discoverPlaceIds()).toEqual([]);
@@ -658,88 +903,58 @@ describe('ExplorePage', () => {
   });
 
   it('shows an accessible empty state when a Discover theme has no verified matches', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness, http, component } = await startPage('/');
     component.chooseDiscoverTheme('green');
-    http.expectOne(
-      (request) => request.url === '/api/discover' && request.params.get('theme') === 'green',
-    ).flush({
-      cityId: 'amsterdam',
-      theme: 'green',
-      description: 'Green spaces selected from the verified catalog.',
-      placeIds: [],
-    });
+    flushDiscover(http, 'green', {});
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(harness.routeNativeElement?.textContent).toContain('0 verified places in Amsterdam');
-    expect(harness.routeNativeElement?.textContent).toContain('No verified places matched this theme');
+    expect(component.discoverGroups()).toHaveLength(3);
+    expect(harness.routeNativeElement?.textContent).toContain('No verified places matched this theme here.');
     expect(harness.routeNativeElement?.querySelector('.discover-picks')).toBeNull();
   });
 
-  it('cancels stale theme and city Discover responses', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
-
+  it('cancels stale all-city Discover requests when the selected theme changes', async () => {
+    const { harness, http, component } = await startPage('/');
     component.chooseDiscoverTheme('architecture');
-    const oldThemeRequest = http.expectOne(
-      (request) => request.url === '/api/discover' && request.params.get('theme') === 'architecture',
-    );
+    const oldThemeRequests = CITIES.map((city) => discoverRequest(http, city.id, 'architecture'));
     component.chooseDiscoverTheme('culture');
-    const oldCityRequest = http.expectOne(
-      (request) => request.url === '/api/discover' && request.params.get('theme') === 'culture',
-    );
-    expect(oldThemeRequest.cancelled).toBe(true);
-
-    await TestBed.inject(Router).navigateByUrl('/?city=rotterdam');
-    const rotterdamPlaces = placesRequest(http, 'rotterdam');
-    const rotterdamHubs = stopsRequest(http, 'rotterdam');
-    expect(oldCityRequest.cancelled).toBe(true);
-    rotterdamPlaces.flush([
-      { ...AMSTERDAM_PLACES[0], id: 'rotterdam-museum', cityId: 'rotterdam' },
-    ]);
-    rotterdamHubs.flush(HUBS.filter((hub) => hub.cityId === 'rotterdam'));
-    await harness.fixture.whenStable();
-
+    const oldCultureRequests = CITIES.map((city) => discoverRequest(http, city.id, 'culture'));
+    expect(oldThemeRequests.every((request) => request.cancelled)).toBe(true);
     component.chooseDiscoverTheme('green');
-    const currentRequest = http.expectOne(
-      (request) => request.url === '/api/discover'
-        && request.params.get('cityId') === 'rotterdam'
-        && request.params.get('theme') === 'green',
-    );
-    currentRequest.flush({
-      cityId: 'rotterdam',
-      theme: 'green',
-      description: 'Green spaces selected from the verified catalog.',
-      placeIds: ['rotterdam-museum'],
-    });
+    expect(oldCultureRequests.every((request) => request.cancelled)).toBe(true);
+
+    flushDiscover(http, 'green', { rotterdam: [ROTTERDAM_PLACES[1]] });
     await harness.fixture.whenStable();
     harness.detectChanges();
     expect(component.activeDiscoverTheme()).toBe('green');
     expect(component.discoverPlaceIds()).toEqual(['rotterdam-museum']);
-    expect(component.discoverPlaces().every((place) => place.cityId === 'rotterdam')).toBe(true);
+    expect(component.discoverGroups().map((group) => group.cityId)).toEqual([
+      'amsterdam', 'rotterdam', 'utrecht',
+    ]);
+    expect(TestBed.inject(Router).url).toBe('/');
   });
 
   it('asks before replacing a draft when adding a place from another city', async () => {
-    const { harness, http, component } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(AMSTERDAM_PLACES);
-    await harness.fixture.whenStable();
+    const { harness, component } = await startPage('/');
     component.addPlaceToPlan('amsterdam-museum');
-
-    await TestBed.inject(Router).navigateByUrl('/?city=rotterdam');
-    placesRequest(http, 'rotterdam').flush([
-      { ...AMSTERDAM_PLACES[0], id: 'rotterdam-museum', cityId: 'rotterdam' },
-    ]);
-    stopsRequest(http, 'rotterdam').flush(HUBS.filter((hub) => hub.cityId === 'rotterdam'));
-    await harness.fixture.whenStable();
     harness.detectChanges();
     component.addPlaceToPlan('rotterdam-museum');
     harness.detectChanges();
 
     expect(component.draftStore.draft()?.cityId).toBe('amsterdam');
     expect(harness.routeNativeElement?.querySelector('#draft-conflict-title')).toBeTruthy();
+    const keep = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
+      .find((button) => button.textContent?.trim() === 'Keep existing') as HTMLButtonElement;
+    keep.click();
+    await harness.fixture.whenStable();
+    expect(component.draftStore.draft()).toMatchObject({
+      cityId: 'amsterdam',
+      placeIds: ['amsterdam-museum'],
+    });
+
+    component.addPlaceToPlan('rotterdam-museum');
+    harness.detectChanges();
     const replace = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
       .find((button) => button.textContent?.includes('Start new for Rotterdam')) as HTMLButtonElement;
     replace.click();
@@ -750,42 +965,45 @@ describe('ExplorePage', () => {
     });
   });
 
-  it('shows a catalog error and retries the same city request', async () => {
-    const { harness, http } = await startPage('/?city=amsterdam');
-    placesRequest(http, 'amsterdam').flush(
+  it('shows a catalog error and retries all three city requests', async () => {
+    const { harness, http } = await startPage('/', { deferPlaces: true });
+    for (const city of CITIES) {
+      placesRequest(http, city.id).flush(
       { status: 503, detail: 'Catalog is temporarily unavailable' },
       { status: 503, statusText: 'Unavailable' },
-    );
+      );
+    }
     await harness.fixture.whenStable();
     harness.detectChanges();
     expect(harness.routeNativeElement?.querySelector('[role="alert"]')?.textContent)
       .toContain('Catalog is temporarily unavailable');
 
     (harness.routeNativeElement?.querySelector('.state-card button') as HTMLButtonElement).click();
-    const retry = placesRequest(http, 'amsterdam');
-    retry.flush(AMSTERDAM_PLACES);
+    flushPlaces(http, { amsterdam: AMSTERDAM_PLACES });
     await harness.fixture.whenStable();
     harness.detectChanges();
     expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(3);
   });
 
   it('retains the API health status and supports health retry', async () => {
-    const harness = await RouterTestingHarness.create('/?city=amsterdam');
+    const harness = await RouterTestingHarness.create('/');
     const http = TestBed.inject(HttpTestingController);
     http.expectOne('/api/health').flush('offline', { status: 503, statusText: 'Service unavailable' });
     http.expectOne('/api/cities').flush(CITIES);
-    placesRequest(http, 'amsterdam').flush([]);
-    stopsRequest(http, 'amsterdam').flush(HUBS.filter((hub) => hub.cityId === 'amsterdam'));
+    for (const city of CITIES) {
+      stopsRequest(http, city.id).flush(HUBS.filter((hub) => hub.cityId === city.id));
+    }
+    flushPlaces(http, {});
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(harness.routeNativeElement?.querySelector('.api-status--offline')).toBeTruthy();
-    expect(harness.routeNativeElement?.querySelector('.api-status__text--desktop')?.textContent)
+    expect(harness.routeNativeElement?.querySelector('.api-alert')).toBeTruthy();
+    expect(harness.routeNativeElement?.querySelector('.api-alert')?.textContent)
       .toContain('API returned HTTP 503');
     (harness.routeNativeElement?.querySelector('button.api-status__retry') as HTMLButtonElement).click();
     http.expectOne('/api/health').flush({ status: 'UP', service: 'hopon-api' });
     await harness.fixture.whenStable();
     harness.detectChanges();
-    expect(harness.routeNativeElement?.querySelector('.api-status--online')).toBeTruthy();
+    expect(harness.routeNativeElement?.querySelector('.api-alert')).toBeNull();
   });
 });

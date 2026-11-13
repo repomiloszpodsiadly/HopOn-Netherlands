@@ -1,22 +1,15 @@
 # HopOn Netherlands
 
-HopOn is a mobile-first guide to places in Amsterdam, Rotterdam and Utrecht. Search and filter the curated OpenStreetMap catalog, explore it on a MapLibre map, discover nearby mobility hubs, and use Discover by Vibe to shape a day around selected places.
+HopOn is an Angular 22 and Spring Boot 4 local-first guide to Amsterdam, Rotterdam and Utrecht. Explore loads all three cities together in one shared catalog and map; search and category filters apply across the catalog, and every place card identifies its city. Discover by Vibe is deterministic, not AI, and remains available in supported narrower layouts (up to 1100px). Saved day plans are single-city. The app does not provide transit routing, user accounts or a hosted production service.
 
-## Plans
+## Requirements
 
-Choose between 1 and 12 unique places from one city to create a plan. A new plan remains a temporary draft in that browser tab's `sessionStorage` until it is saved. Saved Plans are stored by the Spring API in in-memory H2 and support the full Create → List → Read → Update → Delete flow. Saved plans survive page refreshes while the backend process is running; they reset when that process restarts.
+- Windows PowerShell; Docker is not needed.
+- Java 27. `.tools\run-backend.ps1` uses a verified `JAVA_HOME` or `.tools\jdk-27` and can bootstrap a local JDK when neither exists.
+- The committed Gradle wrapper uses Gradle 9.8.2.
+- Node.js `^22.22.3 || ^24.15.0 || ^26.0.0` and npm 11.19.0, as declared in `frontend/package.json`.
 
-The API used by the plans screens is:
-
-| Request | Success response |
-| --- | --- |
-| `POST /api/plans` | `201 Created` with a `Location` header |
-| `GET /api/plans` | `200 OK` |
-| `GET /api/plans/{id}` | `200 OK`, or `404 Not Found` |
-| `PUT /api/plans/{id}` | `200 OK` |
-| `DELETE /api/plans/{id}` | `204 No Content`, or `404 Not Found` |
-
-## Run locally (Windows PowerShell)
+## Start the app
 
 Terminal 1, from the repository root:
 
@@ -24,46 +17,67 @@ Terminal 1, from the repository root:
 .\.tools\run-backend.ps1
 ```
 
-This starts the Java 27 / Spring Boot API at `http://localhost:8080` using the Gradle 9.8.2 wrapper.
+This starts Spring on `127.0.0.1:8080`.
 
 Terminal 2, from the repository root:
 
 ```powershell
-cd frontend
-npm ci
-npm start
+Set-Location .\frontend
+npm.cmd ci
+npm.cmd start
 ```
 
-Use a Node.js version matching `^22.22.3 || ^24.15.0 || ^26.0.0` from `frontend/package.json`. Open `http://localhost:4200`. Angular proxies `/api/**` to the backend. `npm run start:lan` serves the UI on the local network.
+Open <http://localhost:4200>. Angular proxies relative `/api/**` requests to Spring. The Playwright server uses port 4300.
+
+For a phone on the same trusted Wi-Fi, run `npm.cmd run start:lan` in `frontend/` and open `http://<PC-LAN-IP>:4200`. Allow the Angular dev server on Windows Private networks only if prompted. Keep backend port 8080 on loopback; do not expose it to the LAN or Public networks.
+
+## Data and maps
+
+The city catalog is a static OpenStreetMap snapshot, not a live transit feed. Amsterdam, Rotterdam and Utrecht appear together in Explore; search and category filters share that catalog, while each saved plan belongs to one city. A new plan is a temporary draft in that tab's `sessionStorage`. Saved plans live in in-memory H2: they survive browser refresh while Spring is running and reset when the backend process stops.
+
+The MapLibre map loads the public [OpenFreeMap](https://openfreemap.org/) Liberty style and needs an internet connection. It shows the three-city overview; pan and zoom to explore each area. An isolated tile, glyph or sprite failure can leave a partially rendered map without a Retry control. A startup timeout or WebGL loss can show the explicit map fallback and Retry action. Search, place cards and plan workflows remain usable when map resources fail; this is not an offline-map guarantee. MapLibre keeps map attribution visible. See [OpenStreetMap copyright and licensing](https://www.openstreetmap.org/copyright) and [the photo attribution manifest](frontend/public/assets/catalog/assets-attribution.json) for the featured photos' sources, authors, licenses and change notes.
 
 ## Checks
 
-Backend tests and executable archive (PowerShell, from the repository root):
+Backend tests and executable archive (from the repository root):
 
 ```powershell
-cd backend
+Set-Location .\backend
 .\gradlew.bat clean test bootJar
 ```
 
-Frontend checks (PowerShell, from the repository root):
+Frontend checks (from the repository root):
 
 ```powershell
-cd frontend
-npm ci
-npm run lint
-npm run typecheck
-npm test
-npm run build
+Set-Location .\frontend
+npm.cmd run lint
+npm.cmd run typecheck
+npm.cmd run test
+npm.cmd run build
 ```
 
-For browser E2E, first start the backend with `.\.tools\run-backend.ps1` from the repository root in a separate terminal. Then, from `frontend/`, install Chromium once and run the browser suite:
+For browser E2E, start the backend in a separate terminal, then from `frontend/` install Chromium once and run:
 
 ```powershell
-cd frontend
 npx playwright install chromium
-npm run test:e2e
+npm.cmd run test:e2e
 ```
 
-Playwright starts a separate Angular server on port 4300 and proxies API requests to the running Spring backend at port 8080.
+The suite starts Angular on port 4300 and uses the real Spring/H2 API on 8080. Its regular map style is deterministic; it does not prove public tile delivery. An optional external style smoke is:
 
-The city catalog is a static OpenStreetMap snapshot. Map styles and tiles require a network connection; browsing and saved-plan CRUD remain available when map tiles cannot load.
+```powershell
+$env:HOPON_LIVE_MAP_SMOKE = '1'
+npm.cmd run test:e2e -- --grep 'real OpenFreeMap'
+Remove-Item Env:\HOPON_LIVE_MAP_SMOKE
+```
+
+That smoke checks the style response and map readiness, not rendered tiles.
+
+The [manual phone checklist](docs/HOP-006-manual-qa-checklist.md), [recruitment demo outline](docs/HOP-006-recruitment-demo.md), and [release evidence](docs/HOP-006-release-verification.md) keep automated and user-run checks separate.
+
+## Troubleshooting
+
+- **Port 8080 is occupied:** identify the listening process with the PowerShell steps in the [manual QA checklist](docs/HOP-006-manual-qa-checklist.md). Do not stop an unknown process or start a second backend. Restarting Spring clears saved H2 plans.
+- **Map resources fail:** isolated tile errors may leave gaps without a Retry control. If startup reaches the explicit fallback, check internet access and use **Retry map**. OpenFreeMap is external; catalog and plan workflows remain available.
+- **Playwright cannot find Chromium:** run `npx playwright install chromium` from `frontend/`.
+- **Phone cannot connect:** confirm the phone and PC share a trusted Wi-Fi and that the Private firewall allows the Angular server. Do not open port 8080 or add router port forwarding.

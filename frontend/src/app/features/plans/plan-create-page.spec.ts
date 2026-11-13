@@ -107,7 +107,9 @@ describe('PlanCreatePage', () => {
 
     expect(component.draftStore.draft()?.cityId).toBe('rotterdam');
     expect(component.draftStore.draft()?.placeIds).toEqual([]);
-    expect(harness.routeNativeElement?.querySelector('#plan-city')).toBeTruthy();
+    const citySelect = harness.routeNativeElement?.querySelector<HTMLSelectElement>('#plan-city');
+    expect(citySelect).toBeTruthy();
+    expect(citySelect?.value).toBe('rotterdam');
     const plansLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
       'nav[aria-label="Main navigation"] a[href="/plans"]',
     );
@@ -235,7 +237,7 @@ describe('PlanCreatePage', () => {
       '.plans-topbar .plans-brand',
       '.plans-topbar .editor-back',
       'app-main-navigation a[href*="#map-region"]',
-      'app-main-navigation a[href="/?city=amsterdam"]',
+      'app-main-navigation a[href="/#map-region"]',
       'app-main-navigation a[href="/plans"]',
     ];
     for (const selector of exitSelectors) {

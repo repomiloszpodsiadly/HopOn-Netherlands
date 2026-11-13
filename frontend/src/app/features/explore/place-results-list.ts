@@ -1,6 +1,12 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, signal } from '@angular/core';
-import type { PlaceCategory, PlaceDto } from '../../core/models/catalog.models';
+import type { CityId, PlaceCategory, PlaceDto } from '../../core/models/catalog.models';
 import { getFeaturedPlaceImage, getPlaceImageAttribution, type PlaceImageAttribution } from './place-image-attribution';
+
+const CITY_LABELS: Readonly<Record<CityId, string>> = {
+  amsterdam: 'Amsterdam',
+  rotterdam: 'Rotterdam',
+  utrecht: 'Utrecht',
+};
 
 export type PlaceResultsView = Readonly<{
   cityName: string;
@@ -35,6 +41,10 @@ export class PlaceResultsListComponent {
   @Output() readonly showMoreRequested = new EventEmitter<void>();
 
   private readonly failedFeaturedImages = signal<ReadonlySet<string>>(new Set());
+
+  cityName(cityId: CityId): string {
+    return CITY_LABELS[cityId];
+  }
 
   featuredImageAttribution(place: PlaceDto): PlaceImageAttribution | null {
     const attribution = getPlaceImageAttribution(place.imageAttributionId);

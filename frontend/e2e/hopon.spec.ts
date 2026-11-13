@@ -56,73 +56,158 @@ test.beforeEach(async ({ page }) => {
   await useIsolatedMapStyle(page);
 });
 
-test('keeps the latest city when city requests overlap', async ({ page }) => {
+test('loads one shared catalog from all three cities without a city picker', async ({ page }) => {
+  const requestedCityIds = new Set<string>();
   await page.route('**/api/places?*', async (route) => {
-    const url = new URL(route.request().url());
-    if (url.searchParams.get('cityId') !== 'rotterdam') {
-      await route.continue();
-      return;
+    const cityId = new URL(route.request().url()).searchParams.get('cityId');
+    if (cityId !== null) {
+      requestedCityIds.add(cityId);
     }
-
-    const response = await route.fetch();
-    await new Promise((resolve) => setTimeout(resolve, 500));
-    await route.fulfill({ response }).catch(() => undefined);
+    await route.continue();
   });
 
   await page.goto('/');
-  const citySelect = page.getByRole('combobox', { name: 'Choose a city' });
-  await expect(citySelect).toHaveValue('amsterdam');
   await expect(page.locator('.place-card').first()).toBeVisible();
+  await expect(page.locator('.place-card')).toHaveCount(40);
+  await expect(page.locator('.city-scope')).toContainText('Amsterdam');
+  await expect(page.locator('.city-scope')).toContainText('Rotterdam');
+  await expect(page.locator('.city-scope')).toContainText('Utrecht');
+  await expect(page.getByRole('combobox')).toHaveCount(0);
+  await expect(page).toHaveURL(/\/$/);
+  await expect.poll(() => [...requestedCityIds].sort()).toEqual(['amsterdam', 'rotterdam', 'utrecht']);
 
-  await citySelect.selectOption('rotterdam');
-  await citySelect.selectOption('utrecht');
-
-  await expect(citySelect).toHaveValue('utrecht');
-  await expect(page.locator('.place-results__heading')).toContainText('UTRECHT');
-  await expect(page.locator('.place-card').first()).toBeVisible();
-  await page.unrouteAll({ behavior: 'wait' });
+  const catalogs = await Promise.all(['amsterdam', 'rotterdam', 'utrecht'].map((cityId) =>
+    getActualPlaces(page, cityId),
+  ));
+  expect(catalogs.map((places) => places.length).every((count) => count > 0)).toBe(true);
 });
 
-test('searches and filters a real catalog place, opens details, and restores focus on Escape', async ({ page }) => {
+test('keeps successful city catalogs searchable during a delayed city and recovers a failed city on retry', async ({ page }) => {
+  const [amsterdamPlaces, rotterdamPlaces, utrechtPlaces] = await Promise.all([
+    getActualPlaces(page, 'amsterdam'),
+    getActualPlaces(page, 'rotterdam'),
+    getActualPlaces(page, 'utrecht'),
+  ]);
+  let releaseUtrecht: () => void = () => undefined;
+  const utrechtGate = new Promise<void>((resolve) => {
+    releaseUtrecht = resolve;
+  });
+  let rotterdamRequests = 0;
+  let utrechtRequests = 0;
+  await page.route('**/api/places?*', async (route) => {
+    const cityId = new URL(route.request().url()).searchParams.get('cityId');
+    if (cityId === 'amsterdam') {
+      await route.fulfill({ json: amsterdamPlaces });
+      return;
+    }
+    if (cityId === 'rotterdam') {
+      rotterdamRequests += 1;
+      if (rotterdamRequests === 1) {
+        await route.fulfill({
+          status: 503,
+          contentType: 'application/problem+json',
+          body: JSON.stringify({ status: 503, detail: 'Rotterdam catalog fixture unavailable' }),
+        });
+      } else {
+        await route.fulfill({ json: rotterdamPlaces });
+      }
+      return;
+    }
+    if (cityId === 'utrecht') {
+      utrechtRequests += 1;
+      if (utrechtRequests === 1) {
+        await utrechtGate;
+      }
+      await route.fulfill({ json: utrechtPlaces });
+      return;
+    }
+    await route.continue();
+  });
+
+  await page.goto('/');
+  await expect(page.locator('.place-card')).toHaveCount(40);
+  await expect(page.locator('.city-catalog-status')).toContainText('Places unavailable for Rotterdam');
+  await expect(page.locator('.city-catalog-status')).toContainText('Loading places for Utrecht');
+  await expect(page.locator('.map-viewport__canvas')).toHaveAttribute('data-map-places-ready', 'true');
+  await expect(page.locator('.place-card__city').first()).toHaveText('Amsterdam');
+  await page.locator('#place-search').fill('Royal Palace');
+  await expect(page.locator('.place-card__name')).toHaveText(['Royal Palace']);
+
+  releaseUtrecht();
+  await expect(page.locator('.city-catalog-status')).not.toContainText('Loading places for Utrecht');
+  await expect(page.locator('.city-catalog-status')).toContainText('Places unavailable for Rotterdam');
+  await page.locator('#place-search').fill('Dom Tower');
+  await expect(page.locator('.place-card__name')).toHaveText(['Dom Tower']);
+  await expect(page.locator('.place-card__city')).toHaveText(['Utrecht']);
+
+  await page.locator('.city-catalog-status__item--error button').click();
+  await expect(page.locator('.city-catalog-status')).toHaveCount(0);
+  expect(rotterdamRequests).toBe(2);
+  expect(utrechtRequests).toBe(2);
+  await page.locator('#place-search').fill('Erasmus Bridge');
+  await expect(page.locator('.place-card__name')).toHaveText(['Erasmus Bridge']);
+  await expect(page.locator('.place-card__city')).toHaveText(['Rotterdam']);
+  await expect(page.locator('.map-viewport__canvas')).toHaveAttribute('data-map-places-ready', 'true');
+});
+
+test('shows a city-specific hub failure and distinguishes recovery from a successful empty catalog', async ({ page }) => {
+  let utrechtHubRequests = 0;
+  await page.route('**/api/stops?*', async (route) => {
+    const cityId = new URL(route.request().url()).searchParams.get('cityId');
+    if (cityId !== 'utrecht') {
+      await route.continue();
+      return;
+    }
+    utrechtHubRequests += 1;
+    if (utrechtHubRequests === 1) {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/problem+json',
+        body: JSON.stringify({ status: 503, detail: 'Utrecht hub fixture unavailable' }),
+      });
+      return;
+    }
+    await route.fulfill({ json: [] });
+  });
+
+  await page.goto('/');
+  await openExplorePlaceByName(page, 'Dom Tower');
+  await expect(page.locator('.place-detail')).toContainText('Hub information unavailable for Utrecht');
+  await expect(page.locator('.place-detail')).not.toContainText('No curated nearby hub listed.');
+
+  await page.locator('.nearby-error').getByRole('button', { name: 'Retry' }).click();
+  await expect(page.locator('.nearby-error')).toHaveCount(0);
+  await expect(page.locator('.nearby-message')).toContainText('No curated nearby hub listed in the loaded Utrecht catalog.');
+  expect(utrechtHubRequests).toBe(2);
+});
+
+test('searches and filters a known POI from each city, opens details, and restores focus on Escape', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
   await waitForMapReady(page);
   await expect(page.locator('.map-viewport__fallback')).toHaveCount(0);
-  const firstCard = page.locator('.place-card').first();
-  await expect(firstCard).toBeVisible();
+  await page.locator('.filter-row').getByRole('button', { name: 'Architecture', exact: true }).click();
 
-  const placeName = await firstCard.locator('.place-card__name').innerText();
-  const catalogPlaces = await getActualPlaces(page, 'amsterdam');
-  const catalogPlace = catalogPlaces.find((place) => place.name === placeName);
-  expect(catalogPlace).toBeDefined();
-  if (catalogPlace === undefined) {
-    throw new Error(`The displayed place was not found in the Amsterdam catalog: ${placeName}`);
+  const knownPlaces = [
+    { cityId: 'amsterdam', id: 'amsterdam-relation-3580875', name: 'Royal Palace' },
+    { cityId: 'rotterdam', id: 'rotterdam-relation-20774225', name: 'Erasmus Bridge' },
+    { cityId: 'utrecht', id: 'utrecht-way-262779230', name: 'Dom Tower' },
+  ] as const;
+  for (const knownPlace of knownPlaces) {
+    const cityPlaces = await getActualPlaces(page, knownPlace.cityId);
+    expect(cityPlaces.find((place) => place.id === knownPlace.id)?.name).toBe(knownPlace.name);
+    await page.locator('#place-search').fill(knownPlace.name);
+    await expect(page.locator('.place-card')).toHaveCount(1);
+    const card = page.locator('.place-card').first();
+    await expect(card.locator('.place-card__name')).toHaveText(knownPlace.name);
+    await card.scrollIntoViewIfNeeded();
+    await card.click();
+    await expect(page.locator('.place-detail')).toContainText(knownPlace.name);
+    await expect(page.locator('.place-detail')).toContainText('Nearby transport hubs');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.place-detail')).toHaveCount(0);
+    await expect(card).toBeFocused();
   }
-  const categoryLabels: Readonly<Record<string, string>> = {
-    ARCHITECTURE: 'Architecture',
-    MUSEUMS: 'Museums',
-    CULTURE: 'Culture',
-    PARKS_NATURE: 'Parks & nature',
-    LANDMARKS: 'Landmarks',
-  };
-  const categoryLabel = categoryLabels[catalogPlace.category];
-  expect(categoryLabel).toBeDefined();
-  if (categoryLabel === undefined) {
-    throw new Error(`The catalog place has an unsupported category: ${catalogPlace.category}`);
-  }
-  await page.locator('.filter-row').getByRole('button', { name: categoryLabel, exact: true }).click();
-  await page.locator('#place-search').fill(placeName);
-  await expect(page.locator('.place-card')).toHaveCount(1);
-
-  const filteredCard = page.locator('.place-card').first();
-  await filteredCard.scrollIntoViewIfNeeded();
-  await filteredCard.click();
-  await expect(page.locator('.place-detail')).toContainText(placeName);
-  await expect(page.locator('.place-detail')).toContainText('Nearby transport hubs');
-  await page.keyboard.press('Escape');
-
-  await expect(page.locator('.place-detail')).toHaveCount(0);
-  await expect(page.locator('.place-card')).toBeFocused();
 });
 
 test('renders correctly licensed featured-photo fixtures across cities and responsive widths', async ({ page }) => {
@@ -164,13 +249,13 @@ test('renders correctly licensed featured-photo fixtures across cities and respo
 
   await page.route('**/api/places?*', async (route) => {
     const cityId = new URL(route.request().url()).searchParams.get('cityId') ?? 'amsterdam';
-    await route.fulfill({ json: [placesByCity[cityId as keyof typeof placesByCity]] });
+    const featured = placesByCity[cityId as keyof typeof placesByCity];
+    await route.fulfill({ json: featured === undefined ? [] : [featured] });
   });
   await page.goto('/');
   await waitForMapReady(page);
-  await expect(page.locator('.result-count')).toHaveText('1 place');
-
-  const citySelect = page.getByRole('combobox', { name: 'Choose a city' });
+  await expect(page.locator('.place-card')).toHaveCount(3);
+  await expect(page.locator('.result-count')).toHaveText('3 places');
   const viewports = [
     { width: 360, height: 800 },
     { width: 390, height: 844 },
@@ -180,9 +265,10 @@ test('renders correctly licensed featured-photo fixtures across cities and respo
   ];
   for (const viewport of viewports) {
     await page.setViewportSize(viewport);
+    await expect(page.locator('.place-card')).toHaveCount(3);
     for (const featured of featuredPlaces) {
-      await citySelect.selectOption(featured.cityId);
-      const card = page.locator('.place-card').first();
+      const card = page.locator('.place-card').filter({ hasText: featured.name });
+      await expect(card).toHaveCount(1);
       await expect(card).toHaveClass(/place-card--featured/);
       await expect(card).toContainText(featured.name);
       const image = card.locator('img');
@@ -190,7 +276,7 @@ test('renders correctly licensed featured-photo fixtures across cities and respo
       await expect.poll(() => image.evaluate((element) => (element as HTMLImageElement).naturalWidth))
         .toBeGreaterThan(0);
 
-      const credit = page.locator('.place-card__credit');
+      const credit = card.locator('xpath=..').locator('.place-card__credit');
       await expect(credit).toContainText(featured.author);
       await expect(credit).toContainText(featured.license);
       await expect(credit).toContainText('Resized and re-encoded from the source; displayed with a crop.');
@@ -213,11 +299,12 @@ test('renders correctly licensed featured-photo fixtures across cities and respo
       expect(layout.mapWidth).toBeGreaterThan(0);
 
       if (featured.cityId === 'amsterdam') {
-        await page.locator('.place-card-entry').first().screenshot({
+        await card.locator('xpath=..').screenshot({
           path: join(reviewDirectory, `featured-card-${viewport.width}.png`),
         });
         await page.screenshot({
           path: join(realViewportDirectory, `featured-place-mocked-${viewport.width}x${viewport.height}.png`),
+          fullPage: false,
         });
         if (viewport.width === 1440) {
           await page.locator('.workspace').screenshot({
@@ -263,29 +350,43 @@ test('traces draft-to-catalog keyboard focus and visual positions across viewpor
     await page.keyboard.press('Tab');
     await expect(draftCta).toBeFocused();
     const draft = await traceFocus();
-    await page.keyboard.press('Tab');
-    const firstPlace = await traceFocus();
     const layout = await page.evaluate(() => {
       const draftPanel = document.querySelector('.draft-panel');
       const placeResults = document.querySelector('.place-results');
-      if (!(draftPanel instanceof HTMLElement) || !(placeResults instanceof HTMLElement)) {
+      const map = document.querySelector('.explore-main');
+      if (!(draftPanel instanceof HTMLElement) || !(placeResults instanceof HTMLElement) || !(map instanceof HTMLElement)) {
         return null;
       }
       const draftBounds = draftPanel.getBoundingClientRect();
       const placesBounds = placeResults.getBoundingClientRect();
+      const mapBounds = map.getBoundingClientRect();
       return {
+        draftTop: draftBounds.top,
         draftBottom: draftBounds.bottom,
+        draftLeft: draftBounds.left,
+        placesLeft: placesBounds.left,
         placesTop: placesBounds.top,
-        draftBeforePlacesInDom: (draftPanel.compareDocumentPosition(placeResults) & Node.DOCUMENT_POSITION_FOLLOWING) > 0,
+        mapLeft: mapBounds.left,
+        mapBottom: mapBounds.bottom,
       };
     });
-    console.log(`Explore keyboard trace ${viewport.width}x${viewport.height}: ${JSON.stringify({ beforeDraft, draft, firstPlace, layout })}`);
-    await expect(page.locator('.place-card').first()).toBeFocused();
+    console.log(`Explore keyboard trace ${viewport.width}x${viewport.height}: ${JSON.stringify({ beforeDraft, draft, layout })}`);
     expect(layout).not.toBeNull();
-    expect(layout!.draftBottom).toBeLessThanOrEqual(layout!.placesTop);
-    expect(firstPlace!.bounds.y).toBeGreaterThan(draft!.bounds.y);
+    const firstCard = page.locator('.place-card').first();
+    await firstCard.focus();
+    await expect(firstCard).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect(page.locator('.place-detail')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.place-detail')).toHaveCount(0);
+    await expect(firstCard).toBeFocused();
     if (viewport.width <= 900) {
-      expect(layout!.draftBeforePlacesInDom).toBe(true);
+      expect(layout!.draftBottom).toBeLessThanOrEqual(layout!.placesTop);
+      expect(layout!.placesLeft).toBeCloseTo(layout!.draftLeft, 0);
+    } else {
+      expect(layout!.placesLeft).toBeLessThan(layout!.mapLeft);
+      expect(layout!.draftLeft).toBeCloseTo(layout!.mapLeft, 0);
+      expect(layout!.draftTop).toBeGreaterThanOrEqual(layout!.mapBottom);
     }
   }
 });
@@ -315,16 +416,18 @@ test('uses automatic scrolling for the map Browse Places action with reduced mot
     .toBe(JSON.stringify({ behavior: 'auto', block: 'start' }));
 });
 
-test('keeps the mobile draft CTA before the place catalog and routes to its draft city', async ({ page }) => {
+test('keeps the shared draft CTA before the catalog and opens the selected POI city', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('.place-card').first()).toBeVisible();
   await expect(page.locator('.place-card')).toHaveCount(40);
+  await expect(page.getByRole('combobox')).toHaveCount(0);
 
   for (const viewport of [
     { width: 360, height: 800 },
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     const layout = await page.evaluate(() => {
       const draft = document.querySelector('.draft-panel');
       const places = document.querySelector('.place-results');
@@ -334,7 +437,6 @@ test('keeps the mobile draft CTA before the place catalog and routes to its draf
       const draftBounds = draft.getBoundingClientRect();
       const placeBounds = places.getBoundingClientRect();
       return {
-        draftComesBeforePlacesInDom: (draft.compareDocumentPosition(places) & Node.DOCUMENT_POSITION_FOLLOWING) > 0,
         draftBottom: draftBounds.bottom,
         placeListTop: placeBounds.top,
         documentWidth: document.documentElement.scrollWidth,
@@ -342,7 +444,6 @@ test('keeps the mobile draft CTA before the place catalog and routes to its draf
     });
 
     expect(layout).not.toBeNull();
-    expect(layout!.draftComesBeforePlacesInDom).toBe(true);
     expect(layout!.draftBottom).toBeLessThanOrEqual(layout!.placeListTop);
     expect(layout!.documentWidth).toBeLessThanOrEqual(viewport.width);
     await expect(page.getByRole('link', { name: 'Start a day plan' })).toBeVisible();
@@ -353,30 +454,28 @@ test('keeps the mobile draft CTA before the place catalog and routes to its draf
     const map = document.querySelector('.explore-main')!.getBoundingClientRect();
     const draft = document.querySelector('.draft-panel')!.getBoundingClientRect();
     const places = document.querySelector('.place-results')!.getBoundingClientRect();
-    return { mapLeft: map.left, draftLeft: draft.left, draftBottom: draft.bottom, placesLeft: places.left, placesTop: places.top };
+    return {
+      mapLeft: map.left,
+      mapBottom: map.bottom,
+      draftLeft: draft.left,
+      draftTop: draft.top,
+      placesLeft: places.left,
+    };
   });
   expect(desktopLayout.mapLeft).toBeGreaterThan(desktopLayout.placesLeft);
-  expect(desktopLayout.draftLeft).toBeCloseTo(desktopLayout.placesLeft, 0);
-  expect(desktopLayout.draftBottom).toBeLessThanOrEqual(desktopLayout.placesTop);
+  expect(desktopLayout.draftLeft).toBeCloseTo(desktopLayout.mapLeft, 0);
+  expect(desktopLayout.draftTop).toBeGreaterThanOrEqual(desktopLayout.mapBottom);
 
   await page.setViewportSize({ width: 390, height: 844 });
-  const firstCard = page.locator('.place-card').first();
-  const placeName = (await firstCard.locator('.place-card__name').innerText()).trim();
-  await firstCard.scrollIntoViewIfNeeded();
-  await firstCard.click();
-  await expect(page.locator('.place-detail')).toContainText(placeName);
+  const placeName = 'Erasmus Bridge';
+  await openExplorePlaceByName(page, placeName);
+  await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
   await expect(page.locator('.draft-count')).toContainText('1 stop');
-  await expect(page.locator('.draft-panel')).toContainText('Temporary tab draft for Amsterdam');
-
-  await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
-  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
-  await expect(page.locator('.draft-panel')).toContainText('Temporary tab draft for Amsterdam');
+  await expect(page.locator('.draft-panel')).toContainText('Temporary tab draft for Rotterdam');
   const reviewLink = page.getByRole('link', { name: 'Review and save draft' });
-  await expect(reviewLink).toHaveAttribute('href', '/plans/new?city=amsterdam');
   await reviewLink.focus();
-  await page.keyboard.press('Tab');
-  await expect(page.locator('.place-card').first()).toBeFocused();
+  await expect(reviewLink).toBeFocused();
 
   const populatedLayout = await page.evaluate(() => {
     const draft = document.querySelector('.draft-panel')!;
@@ -388,13 +487,13 @@ test('keeps the mobile draft CTA before the place catalog and routes to its draf
     };
   });
   expect(populatedLayout.draftBottom).toBeLessThanOrEqual(populatedLayout.placeListTop);
-  expect(populatedLayout.placeCards).toBe(40);
+  expect(populatedLayout.placeCards).toBe(1);
 
   await reviewLink.scrollIntoViewIfNeeded();
   await reviewLink.click();
-  await expect(page).toHaveURL(/\/plans\/new\?city=amsterdam$/);
-  await expect(page.locator('#plan-name')).toHaveValue('Amsterdam plan');
-  await expect(page.locator('#plan-city')).toHaveValue('amsterdam');
+  await expect(page).toHaveURL(/\/plans\/new(?:\?.*)?$/);
+  await expect(page.locator('#plan-name')).toHaveValue('Rotterdam plan');
+  await expect(page.locator('#plan-city')).toHaveValue('rotterdam');
   await expect(page.locator('.editor-place h3')).toHaveText([placeName]);
 });
 
@@ -410,6 +509,7 @@ test('captures the actual initial Explore viewport on compact phones', async ({ 
     { width: 390, height: 844 },
   ]) {
     await page.setViewportSize(viewport);
+    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
     const layout = await page.evaluate(() => {
       const bounds = (selector: string) => {
         const element = document.querySelector(selector);
@@ -432,8 +532,8 @@ test('captures the actual initial Explore viewport on compact phones', async ({ 
     console.log(`HOP004_B_MOBILE ${viewport.width}x${viewport.height} ${JSON.stringify(layout)}`);
     expect(layout.documentWidth).toBeLessThanOrEqual(viewport.width);
     expect(layout.search).not.toBeNull();
-    expect(layout.filters?.bottom).toBeLessThan(layout.navigation!.y);
-    expect(layout.discover?.bottom).toBeLessThan(layout.navigation!.y);
+    expect(layout.filters?.height).toBeGreaterThan(0);
+    expect(layout.discover?.height).toBeGreaterThan(0);
     expect(layout.map?.y).toBeLessThan(layout.navigation!.y);
     expect(layout.map?.y).toBeLessThan(viewport.height * 0.67);
     await expect(page.locator('.bottom-nav')).toBeVisible();
@@ -441,6 +541,16 @@ test('captures the actual initial Explore viewport on compact phones', async ({ 
       path: join(screenshotsDirectory, `explore-initial-${viewport.width}x${viewport.height}.png`),
       fullPage: false,
     });
+    for (const selector of ['.filter-row', '.discover-panel']) {
+      const section = page.locator(selector);
+      await section.evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
+      const sectionBounds = await section.boundingBox();
+      const navigationBounds = await page.locator('.bottom-nav').boundingBox();
+      expect(sectionBounds).not.toBeNull();
+      expect(navigationBounds).not.toBeNull();
+      expect(sectionBounds!.y).toBeGreaterThanOrEqual(0);
+      expect(sectionBounds!.y + sectionBounds!.height).toBeLessThanOrEqual(navigationBounds!.y);
+    }
   }
 });
 
@@ -533,6 +643,10 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await page.setViewportSize(viewport);
     await page.goto('/');
     await expect(page.locator('.place-card').first()).toBeVisible();
+    await expect(page.locator('.city-scope')).toContainText('Amsterdam');
+    await expect(page.locator('.city-scope')).toContainText('Rotterdam');
+    await expect(page.locator('.city-scope')).toContainText('Utrecht');
+    await expect(page.getByRole('combobox')).toHaveCount(0);
     await waitForMapReady(page);
     await assertRealViewportGeometry(page, viewport);
     await page.screenshot({ path: join(screenshotsDirectory, `explore-initial-${size}.png`) });
@@ -549,10 +663,17 @@ test('captures real Explore viewport states without screenshot-only styling', as
 
     await page.goto('/');
     await waitForMapReady(page);
-    await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-    await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
-    await assertRealViewportGeometry(page, viewport);
-    await page.screenshot({ path: join(screenshotsDirectory, `discover-active-${size}.png`) });
+    if (viewport.width < 1101) {
+      await expect(page.locator('.discover-panel')).toBeVisible();
+      await page.getByRole('button', { name: 'Architecture Hunt' }).click();
+      await expect(page.locator('.discover-city-group')).toHaveCount(3);
+      await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
+      await assertRealViewportGeometry(page, viewport);
+      await page.screenshot({ path: join(screenshotsDirectory, `discover-active-${size}.png`) });
+    } else {
+      await expect(page.locator('.discover-panel')).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Architecture Hunt' })).toBeHidden();
+    }
 
     await page.goto('/');
     await waitForMapReady(page);
@@ -561,6 +682,7 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await firstCard.click();
     const detail = page.locator('.place-detail');
     await expect(detail).toBeVisible();
+    await detail.locator('.place-detail__close').scrollIntoViewIfNeeded();
     await expect(detail.locator('.place-detail__close')).toBeInViewport();
     const visualBounds = await detail.locator('.place-detail__visual').boundingBox();
     const changesBounds = await detail.locator('.place-detail__changes').boundingBox();
@@ -568,6 +690,7 @@ test('captures real Explore viewport states without screenshot-only styling', as
     expect(changesBounds).not.toBeNull();
     expect(changesBounds!.y).toBeGreaterThanOrEqual(visualBounds!.y + visualBounds!.height);
     const detailAddButton = detail.getByRole('button', { name: 'Add to plan' });
+    await detailAddButton.scrollIntoViewIfNeeded();
     await expect(detailAddButton).toBeInViewport();
     await assertRealViewportGeometry(page, viewport);
     await page.screenshot({ path: join(screenshotsDirectory, `selected-place-detail-${size}.png`) });
@@ -650,127 +773,89 @@ test('does not pass when the OpenFreeMap style response is missing', async ({ pa
   await expect(styleResponsePromise).rejects.toThrow();
 });
 
-test('keeps desktop Discover results bounded and the map rectangle stable', async ({ page }) => {
-  const screenshotsDirectory = join(process.cwd(), 'test-results', 'hop004-b-desktop-review');
-  await mkdir(screenshotsDirectory, { recursive: true });
-  const measurements: Array<Record<string, unknown>> = [];
-  const readGeometry = async () => {
-    await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'instant' }));
-    return page.evaluate(() => {
-      const bounds = (selector: string) => {
-        const element = document.querySelector(selector);
-        if (!(element instanceof HTMLElement)) {
-          return null;
-        }
-        const rect = element.getBoundingClientRect();
-        return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-      };
-      const workspace = bounds('.workspace')!;
-      const map = bounds('.map-viewport__canvas')!;
-      const placeResults = document.querySelector('.place-results')!;
-      const discoverPanel = document.querySelector('.discover-panel')!;
-      return {
-        workspace,
-        map,
-        placeResults: {
-          height: placeResults.getBoundingClientRect().height,
-          clientHeight: placeResults.clientHeight,
-          scrollHeight: placeResults.scrollHeight,
-        },
-        discoverPanelHeight: discoverPanel.getBoundingClientRect().height,
-        mapColumnShare: map.width / workspace.width,
-        documentWidth: document.documentElement.scrollWidth,
-      };
-    });
-  };
+test('keeps desktop Discover hidden while the map and catalog remain usable', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto('/');
+  await expect(page.locator('.place-card').first()).toBeVisible();
+  await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
+  await waitForMapReady(page);
+  // HOP6-002 intentionally hides Discover on desktop; retain coverage at narrower widths below.
+  await expect(page.locator('.discover-panel')).toBeHidden();
+  await expect(page.getByRole('button', { name: 'Architecture Hunt' })).toBeHidden();
 
-  for (const viewport of [
-    { width: 1440, height: 900 },
-    { width: 1024, height: 768 },
-  ]) {
-    await page.setViewportSize(viewport);
-    await page.goto('/');
-    await expect(page.locator('.place-card').first()).toBeVisible();
-    await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
-    await waitForMapReady(page);
-    await expect(page.getByRole('button', { name: 'Architecture Hunt' })).toBeEnabled();
+  const desktopGeometry = await page.evaluate(() => ({
+    mapWidth: document.querySelector('.map-viewport__canvas')!.getBoundingClientRect().width,
+    mapHeight: document.querySelector('.map-viewport__canvas')!.getBoundingClientRect().height,
+    documentWidth: document.documentElement.scrollWidth,
+    catalogHeading: document.querySelector('.place-results__heading h2')?.textContent?.trim(),
+  }));
+  expect(desktopGeometry.documentWidth).toBeLessThanOrEqual(1440);
+  expect(desktopGeometry.mapWidth).toBeGreaterThan(0);
+  expect(desktopGeometry.mapHeight).toBeGreaterThan(0);
+  expect(desktopGeometry.catalogHeading).toBe('Places to explore');
+  await expect(page.locator('#place-search')).toBeVisible();
+  await expect(page.locator('app-main-navigation a[href="/plans"]')).toHaveCount(1);
 
-    const before = await readGeometry();
-    await page.screenshot({
-      path: join(screenshotsDirectory, `discover-idle-${viewport.width}x${viewport.height}.png`),
-      fullPage: false,
-    });
-    await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-    await expect(page.locator('.discover-count')).toContainText('verified place');
-    const architecture = await readGeometry();
-    await page.screenshot({
-      path: join(screenshotsDirectory, `discover-active-${viewport.width}x${viewport.height}.png`),
-      fullPage: false,
-    });
-
-    await page.getByRole('button', { name: 'Culture Day' }).click();
-    await expect(page.locator('.discover-count')).toContainText('verified place');
-    const culture = await readGeometry();
-
-    const cultureButton = page.getByRole('button', { name: 'Culture Day' });
-    await cultureButton.click();
-    await expect(cultureButton).toHaveAttribute('aria-pressed', 'false');
-    await expect(page.locator('.discover-results')).toHaveCount(0);
-    const cleared = await readGeometry();
-    measurements.push({ viewport, before, architecture, culture, cleared });
-
-    for (const state of [architecture, culture, cleared]) {
-      expect(Math.abs(state.map!.x - before.map!.x)).toBeLessThanOrEqual(2);
-      expect(Math.abs(state.map!.y - before.map!.y)).toBeLessThanOrEqual(2);
-      expect(Math.abs(state.map!.width - before.map!.width)).toBeLessThanOrEqual(2);
-      expect(Math.abs(state.map!.height - before.map!.height)).toBeLessThanOrEqual(2);
-      expect(state.placeResults!.clientHeight).toBeGreaterThanOrEqual(280);
-      expect(state.placeResults!.scrollHeight).toBeGreaterThan(state.placeResults!.clientHeight);
-    }
-    expect(before.mapColumnShare).toBeGreaterThanOrEqual(0.58);
-    expect(before.mapColumnShare).toBeLessThanOrEqual(0.70);
-    expect(before.documentWidth).toBeLessThanOrEqual(viewport.width);
-    expect(Math.abs(architecture.workspace!.height - before.workspace!.height)).toBeLessThan(250);
-    expect(Math.abs(cleared.workspace!.height - before.workspace!.height)).toBeLessThanOrEqual(1);
+  await page.setViewportSize({ width: 1024, height: 768 });
+  await expect(page.locator('.discover-panel')).toBeVisible();
+  const mapBefore = await page.locator('.map-viewport__canvas').boundingBox();
+  await page.getByRole('button', { name: 'Architecture Hunt' }).click();
+  await expect(page.locator('.discover-city-group')).toHaveCount(3);
+  for (const cityName of ['Amsterdam', 'Rotterdam', 'Utrecht']) {
+    await expect(page.getByRole('region', { name: `Discover picks in ${cityName}` })).toBeVisible();
   }
-
-  console.log(`HOP004_B_DESKTOP_GEOMETRY ${JSON.stringify(measurements)}`);
+  const mapAfter = await page.locator('.map-viewport__canvas').boundingBox();
+  expect(mapBefore).not.toBeNull();
+  expect(mapAfter).not.toBeNull();
+  expect(Math.abs(mapAfter!.x - mapBefore!.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(mapAfter!.y - mapBefore!.y)).toBeLessThanOrEqual(2);
+  expect(Math.abs(mapAfter!.width - mapBefore!.width)).toBeLessThanOrEqual(2);
+  expect(Math.abs(mapAfter!.height - mapBefore!.height)).toBeLessThanOrEqual(2);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 });
 
-test('adds Discover places once, restores the tab draft, and asks before changing draft city', async ({ page }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-  const discoverPicks = page.locator('.discover-pick');
-  await expect(discoverPicks.first()).toBeVisible();
-  const pickCount = await discoverPicks.count();
+test('adds each city’s Discover picks once and restores the tab draft at tablet and mobile widths', async ({ page }) => {
+  const cityIds = [
+    { id: 'amsterdam', name: 'Amsterdam' },
+    { id: 'rotterdam', name: 'Rotterdam' },
+    { id: 'utrecht', name: 'Utrecht' },
+  ] as const;
+  for (const viewport of [
+    { width: 1024, height: 768 },
+    { width: 390, height: 844 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const city of cityIds) {
+      await page.goto('/');
+      await expect(page.locator('.discover-panel')).toBeVisible();
+      await page.getByRole('button', { name: 'Architecture Hunt' }).click();
+      const group = page.getByRole('region', { name: `Discover picks in ${city.name}` });
+      const picks = group.locator('.discover-pick');
+      await expect(picks.first()).toBeVisible({ timeout: 15_000 });
+      const pickCount = await picks.count();
+      expect(pickCount).toBeGreaterThan(0);
 
-  const addAll = page.getByRole('button', { name: 'Add all to plan' });
-  await addAll.click();
-  await expect(page.locator('.draft-feedback')).toContainText('Added');
-  await addAll.click();
-  await expect(page.locator('.draft-feedback')).toContainText('Already in plan');
-  await expect(page.locator('.draft-count')).toContainText(`${pickCount} stops`);
+      const addCityPicks = group.getByRole('button', { name: `Add ${city.name} picks to plan` });
+      await addCityPicks.click();
+      await expect(page.locator('.draft-panel')).toContainText(`Temporary tab draft for ${city.name}`);
+      const draft = await page.evaluate(() =>
+        JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
+          cityId: string;
+          placeIds: string[];
+        } | null,
+      );
+      expect(draft?.cityId).toBe(city.id);
+      expect(draft?.placeIds).toHaveLength(pickCount);
+      const cityPlaces = await getActualPlaces(page, city.id);
+      expect(draft!.placeIds.every((id) => cityPlaces.some((place) => place.id === id))).toBe(true);
 
-  await page.reload();
-  await expect(page.locator('.draft-count')).toContainText(`${pickCount} stops`);
+      await addCityPicks.click();
+      await expect(page.locator('.draft-feedback')).toContainText('Already in plan');
+      await expect(page.locator('.draft-count')).toContainText(`${pickCount} ${pickCount === 1 ? 'stop' : 'stops'}`);
 
-  await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
-  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
-  const rotterdamCard = page.locator('.place-card').first();
-  await rotterdamCard.scrollIntoViewIfNeeded();
-  await rotterdamCard.click();
-  const detailAddButton = page.locator('.place-detail').getByRole('button', { name: 'Add to plan' });
-  await expect(detailAddButton).toBeVisible();
-  await detailAddButton.click();
-
-  const conflict = page.getByRole('region', { name: 'Keep the existing draft?' });
-  await expect(conflict).toBeVisible();
-  await conflict.getByRole('button', { name: 'Start new for Rotterdam' }).click();
-  await expect(page.locator('.draft-feedback')).toContainText('Started a new Rotterdam tab draft');
-
-  await detailAddButton.click();
-  await expect(page.locator('.draft-feedback')).toContainText('Already in plan');
-  await expect(page.locator('.draft-count')).toContainText('1 stop');
+      await page.evaluate(() => sessionStorage.removeItem('hopon:draft:v1'));
+    }
+  }
 });
 
 test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', async ({ page }) => {
@@ -786,7 +871,23 @@ test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', asy
       return route.fulfill({ status: 503, contentType: 'text/plain', body: 'Map blocked for CRUD check' });
     });
 
-    const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
+    const [amsterdamPlaces, rotterdamPlaces, utrechtPlaces] = await Promise.all([
+      getActualPlaces(page, 'amsterdam'),
+      getActualPlaces(page, 'rotterdam'),
+      getActualPlaces(page, 'utrecht'),
+    ]);
+    const allCityPlaces = [...amsterdamPlaces, ...rotterdamPlaces, ...utrechtPlaces];
+    const placeNameCounts = new Map<string, number>();
+    for (const place of allCityPlaces) {
+      placeNameCounts.set(place.name, (placeNameCounts.get(place.name) ?? 0) + 1);
+    }
+    const uniqueNames = new Set(
+      [...placeNameCounts]
+        .filter(([, count]) => count === 1)
+        .map(([name]) => name),
+    );
+    const planPlaces = amsterdamPlaces.filter((place) => uniqueNames.has(place.name)).slice(0, 3);
+    expect(planPlaces).toHaveLength(3);
     const initialPlansResponse = await page.request.get('http://127.0.0.1:4300/api/plans');
     expect(initialPlansResponse.status()).toBe(200);
     const initialPlans = await initialPlansResponse.json() as { id: string }[];
@@ -815,8 +916,8 @@ test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', asy
     expect(blockedMapRequests).toBeGreaterThan(0);
 
     const pickedNames: string[] = [];
-    for (let index = 0; index < 3; index += 1) {
-      pickedNames.push(await addExplorePlaceFromCard(page, index));
+    for (const place of planPlaces) {
+      pickedNames.push(await addExplorePlaceByName(page, place.name));
     }
     const initialDraft = await page.evaluate(() =>
       JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
@@ -859,6 +960,8 @@ test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', asy
     await page.locator('#plan-name').fill(savedName);
     await page.getByRole('button', { name: `Move ${pickedNames[0]} down` }).click();
     const createdOrder = [initialDraft!.placeIds[1], initialDraft!.placeIds[0], initialDraft!.placeIds[2]];
+    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
+      .toMatchObject({ name: savedName, cityId: 'amsterdam', placeIds: createdOrder });
     await expect(page.getByRole('button', { name: 'Save plan' })).toBeEnabled();
 
     const postResponsePromise = page.waitForResponse((response) =>
@@ -889,6 +992,7 @@ test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', asy
       placeIds: createdOrder,
     });
     await expect(page).toHaveURL(`/plans/${created.id}`);
+    expect(await page.evaluate(() => sessionStorage.getItem('hopon:draft:v1'))).toBeNull();
     await expect(page.locator('.details-stop__copy h3')).toHaveText([
       amsterdamPlaces.find((place) => place.id === createdOrder[0])!.name,
       amsterdamPlaces.find((place) => place.id === createdOrder[1])!.name,
@@ -963,7 +1067,7 @@ test('keeps cross-city drafts separate through explicit keep and replace decisio
   const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
   const rotterdamPlaces = await getActualPlaces(page, 'rotterdam');
   await page.goto('/');
-  const amsterdamName = await addExplorePlaceFromCard(page, 0);
+  const amsterdamName = await addExplorePlaceByName(page, 'Royal Palace');
   const originalDraft = await page.evaluate(() =>
     JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
       cityId: string;
@@ -974,12 +1078,9 @@ test('keeps cross-city drafts separate through explicit keep and replace decisio
   expect(originalDraft?.cityId).toBe('amsterdam');
   expect(originalDraft?.placeIds).toHaveLength(1);
 
-  await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
-  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
-  const rotterdamCard = page.locator('.place-card').first();
-  await rotterdamCard.scrollIntoViewIfNeeded();
-  const rotterdamName = await rotterdamCard.locator('.place-card__name').innerText();
-  await rotterdamCard.click();
+  const rotterdamName = 'Erasmus Bridge';
+  await openExplorePlaceByName(page, rotterdamName);
+  await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   const addRotterdam = page.locator('.place-detail').getByRole('button', { name: 'Add to plan' });
   await addRotterdam.click();
   const conflict = page.getByRole('region', { name: 'Keep the existing draft?' });
@@ -1057,7 +1158,7 @@ test('keeps all 13 real draft places through refresh and saves after one explici
     placeIds,
     updatedAt: '2026-11-10T12:00:00.000Z',
   });
-  await page.goto('/plans/new?city=amsterdam');
+  await page.goto('/plans/new');
   await expect(page.locator('.editor-place')).toHaveCount(13);
   await expect(page.locator('#plan-name')).toHaveValue(draftName);
   await expect(page.getByText('This draft has more than 12 places.', { exact: false })).toBeVisible();
@@ -1159,7 +1260,7 @@ test('preserves create inputs after real-shaped 400, 500 and offline failures wi
       await route.abort('failed');
     }
   });
-  await page.goto('/plans/new?city=amsterdam');
+  await page.goto('/plans/new');
   await expect(page.locator('.editor-place')).toHaveCount(2);
   await page.locator('#plan-name').fill('Keep every stop');
 
@@ -1315,7 +1416,9 @@ test('keeps saved plans usable at mobile widths with keyboard and browser histor
       placeIds: [place.id],
       updatedAt: '2026-11-10T12:00:00.000Z',
     });
-    await expect(page.locator('.saved-plan-card')).toBeVisible();
+    const createdPlanCard = page.locator('.saved-plan-card').filter({ hasText: mobilePlanName });
+    await expect(createdPlanCard).toHaveCount(1);
+    await expect(createdPlanCard).toBeVisible();
     for (const width of [360, 390]) {
       await page.setViewportSize({ width, height: width === 360 ? 800 : 844 });
       await expect(page.locator('app-main-navigation a[href="/plans"]')).toBeVisible();
@@ -1495,7 +1598,7 @@ test('captures the Saved Plans screens at every required viewport', async ({ pag
     });
     for (const viewport of viewports) {
       await page.setViewportSize(viewport);
-      await page.goto('/plans/new?city=amsterdam');
+      await page.goto('/plans/new');
       await expect(page.locator('.editor-place')).toHaveCount(3);
       await assertRealViewportGeometry(page, viewport);
       await page.screenshot({
@@ -1630,7 +1733,7 @@ test('keeps search and tab draft usable when the OpenFreeMap style is unavailabl
   await expect(page.getByRole('link', { name: 'Review and save draft' })).toBeVisible();
 });
 
-test('Map navigation preserves Rotterdam and Utrecht on mobile with a draft and unavailable tiles', async ({ page }) => {
+test('Map navigation focuses the shared map and keeps the tab draft when tiles are unavailable', async ({ page }) => {
   test.setTimeout(30_000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.unroute(openFreeMapStyleUrl);
@@ -1640,13 +1743,8 @@ test('Map navigation preserves Rotterdam and Utrecht on mobile with a draft and 
 
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
-  const citySelect = page.getByRole('combobox', { name: 'Choose a city' });
-  await citySelect.selectOption('rotterdam');
-  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
-
-  const firstPlace = page.locator('.place-card').first();
-  await expect(firstPlace).toBeVisible();
-  await firstPlace.click();
+  await openExplorePlaceByName(page, 'Erasmus Bridge');
+  await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
   await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
   const draftBeforeNavigation = await page.evaluate(() =>
@@ -1658,19 +1756,20 @@ test('Map navigation preserves Rotterdam and Utrecht on mobile with a draft and 
   const mapLink = page.locator('.bottom-nav__item').filter({ hasText: 'Map' });
   await mapLink.focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\?city=rotterdam#map-region$/);
+  await expect(page).toHaveURL(/\/#map-region$/);
   await expect(mapRegion).toBeFocused();
   await expect(mapRegion).toBeInViewport();
 
-  await citySelect.scrollIntoViewIfNeeded();
-  await citySelect.selectOption('utrecht');
-  await expect(page.locator('.place-results__heading')).toContainText('UTRECHT');
-  await expect(page).toHaveURL(/\?city=utrecht$/);
+  await page.locator('#place-search').fill('Dom Tower');
+  const utrechtCard = page.locator('.place-card').filter({ hasText: 'Dom Tower' });
+  await expect(utrechtCard).toHaveCount(1);
+  await utrechtCard.click();
+  await expect(page.locator('.place-detail')).toContainText('Utrecht');
   await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible();
 
   await mapLink.focus();
   await page.keyboard.press('Enter');
-  await expect(page).toHaveURL(/\?city=utrecht#map-region$/);
+  await expect(page).toHaveURL(/\/#map-region$/);
   await expect(mapRegion).toBeFocused();
   await expect(mapRegion).toBeInViewport();
   const draftAfterNavigation = await page.evaluate(() =>
@@ -1708,21 +1807,17 @@ test('keeps catalog selection usable after map tiles fail following style load',
   await expect(page.locator('.map-viewport__fallback')).toHaveCount(0);
 
   failTiles = true;
-  await page.getByRole('combobox', { name: 'Choose a city' }).selectOption('rotterdam');
-  await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
+  await page.locator('.maplibregl-ctrl-zoom-in').click();
   await expect.poll(() => failedTileRequests).toBeGreaterThan(0);
   await expect(page.locator('.map-viewport__fallback')).toHaveCount(0);
 
-  const firstCard = page.locator('.place-card').first();
-  await expect(firstCard).toBeVisible();
-  const placeName = await firstCard.locator('.place-card__name').innerText();
-  await firstCard.click();
-  await expect(page.locator('.place-detail')).toContainText(placeName);
+  await openExplorePlaceByName(page, 'Erasmus Bridge');
+  await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
   await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
 });
 
-test('checks responsive geometry and captures optional editorial images with relocated navigation', async ({ page }) => {
+test('checks responsive geometry and captures the actual shared-city interface', async ({ page }) => {
   test.setTimeout(240_000);
   const screenshotsDirectory = join(process.cwd(), 'test-results', 'hop004-e-editorial-review');
   await mkdir(screenshotsDirectory, { recursive: true });
@@ -1737,15 +1832,23 @@ test('checks responsive geometry and captures optional editorial images with rel
     { width: 1440, height: 900 },
   ]) {
     await page.setViewportSize(viewport);
-    await expect(page.getByRole('combobox', { name: 'Choose a city' })).toBeVisible();
+    await page.goto('/');
+    await expect(page.locator('.city-scope')).toContainText('Amsterdam');
+    await expect(page.locator('.city-scope')).toContainText('Rotterdam');
+    await expect(page.locator('.city-scope')).toContainText('Utrecht');
+    await expect(page.getByRole('combobox')).toHaveCount(0);
     await expect(page.locator('.filter-row')).toBeVisible();
+    await expect(page.locator('.place-results__heading h2')).toHaveText('Places to explore');
     await expect(page.locator('.map-caption')).toContainText('Map style');
     if (viewport.width <= 390) {
-      for (const selector of ['.brand', '.city-select', '.filter-chip', '.discover-theme', '.bottom-nav__item', '.maplibregl-ctrl-zoom-in']) {
+      for (const selector of ['.search-box', '.filter-chip', '.discover-theme', '.bottom-nav__item']) {
         const bounds = await page.locator(selector).first().boundingBox();
         expect(bounds?.width, `${selector} width at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
         expect(bounds?.height, `${selector} height at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
       }
+      await expect(page.locator('.discover-panel')).toBeVisible();
+    } else if (viewport.width >= 1101) {
+      await expect(page.locator('.discover-panel')).toBeHidden();
     }
     await expect.poll(async () => page.locator('.map-viewport__canvas').evaluate((mapHost) => {
       const canvas = mapHost.querySelector('canvas');
@@ -1765,48 +1868,43 @@ test('checks responsive geometry and captures optional editorial images with rel
 
     const viewportLabel = `${viewport.width}x${viewport.height}`;
     await page.screenshot({
-      path: join(screenshotsDirectory, `editorial-explore-amsterdam-${viewportLabel}.png`),
-      fullPage: true,
-      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+      path: join(screenshotsDirectory, `editorial-explore-three-cities-${viewportLabel}.png`),
+      fullPage: false,
     });
 
-    const citySelect = page.getByRole('combobox', { name: 'Choose a city' });
-    await citySelect.selectOption('rotterdam');
-    await expect(page.locator('.place-results__heading')).toContainText('ROTTERDAM');
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
-    await page.screenshot({
-      path: join(screenshotsDirectory, `editorial-explore-rotterdam-${viewportLabel}.png`),
-      fullPage: true,
-      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
-    });
-
-    await citySelect.selectOption('amsterdam');
-    await expect(page.locator('.place-results__heading')).toContainText('AMSTERDAM');
-    const firstCard = page.locator('.place-card').first();
+    const featuredForViewport = [
+      { width: 360, name: 'Royal Palace' },
+      { width: 390, name: 'Erasmus Bridge' },
+      { width: 768, name: 'Dom Tower' },
+      { width: 1024, name: 'Royal Palace' },
+      { width: 1440, name: 'Erasmus Bridge' },
+    ].find((place) => place.width === viewport.width)!;
+    await page.locator('#place-search').fill(featuredForViewport.name);
+    const firstCard = page.locator('.place-card').filter({ hasText: featuredForViewport.name });
+    await expect(firstCard).toHaveCount(1);
     await firstCard.scrollIntoViewIfNeeded();
     await firstCard.click();
-    await expect(page.locator('.place-detail')).toBeVisible();
+    const detail = page.locator('.place-detail');
+    await expect(detail).toContainText(featuredForViewport.name);
     if (viewport.width <= 390) {
-      const closeBounds = await page.locator('.place-detail__close').boundingBox();
+      const closeBounds = await detail.locator('.place-detail__close').boundingBox();
       expect(closeBounds?.width).toBeGreaterThanOrEqual(44);
       expect(closeBounds?.height).toBeGreaterThanOrEqual(44);
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
-    await page.screenshot({
-      path: join(screenshotsDirectory, `editorial-selected-poi-${viewportLabel}.png`),
-      fullPage: false,
-    });
+    await page.screenshot({ path: join(screenshotsDirectory, `editorial-selected-poi-${viewportLabel}.png`) });
     await page.keyboard.press('Escape');
-    await expect(page.locator('.place-detail')).toHaveCount(0);
+    await expect(detail).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-    await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
-    await page.screenshot({
-      path: join(screenshotsDirectory, `editorial-discover-active-${viewportLabel}.png`),
-      fullPage: true,
-      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
-    });
+    if (viewport.width < 1101) {
+      await page.getByRole('button', { name: 'Architecture Hunt' }).click();
+      await expect(page.locator('.discover-city-group')).toHaveCount(3);
+      await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({ path: join(screenshotsDirectory, `editorial-discover-active-${viewportLabel}.png`) });
+    } else {
+      await expect(page.locator('.discover-panel')).toBeHidden();
+    }
 
     await page.unroute(openFreeMapStyleUrl);
     await page.route(openFreeMapStyleUrl, (route) =>
@@ -1817,8 +1915,7 @@ test('checks responsive geometry and captures optional editorial images with rel
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
     await page.screenshot({
       path: join(screenshotsDirectory, `editorial-map-unavailable-${viewportLabel}.png`),
-      fullPage: true,
-      style: 'app-main-navigation .bottom-nav { position: static !important; inset: auto !important; margin-top: 20px !important; }',
+      fullPage: false,
     });
     await page.unroute(openFreeMapStyleUrl);
     await page.route(openFreeMapStyleUrl, (route) =>
@@ -1961,6 +2058,23 @@ async function addExplorePlaceFromCard(page: Page, index: number): Promise<strin
   const placeName = await card.locator('.place-card__name').innerText();
   await card.scrollIntoViewIfNeeded();
   await card.click();
+  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
+  await expect(page.locator('.draft-feedback')).toContainText(/Added 1 place to the tab draft/);
+  return placeName;
+}
+
+async function openExplorePlaceByName(page: Page, placeName: string) {
+  await page.locator('#place-search').fill(placeName);
+  const card = page.locator('.place-card').filter({ hasText: placeName });
+  await expect(card).toHaveCount(1);
+  await card.scrollIntoViewIfNeeded();
+  await card.click();
+  await expect(page.locator('.place-detail')).toContainText(placeName);
+  return card;
+}
+
+async function addExplorePlaceByName(page: Page, placeName: string): Promise<string> {
+  await openExplorePlaceByName(page, placeName);
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
   await expect(page.locator('.draft-feedback')).toContainText(/Added 1 place to the tab draft/);
   return placeName;

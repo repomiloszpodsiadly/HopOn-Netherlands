@@ -10,9 +10,10 @@
   height: 100%;
   min-height: 360px;
   overflow: hidden;
-  border: 1px solid #d9ded7;
-  border-radius: 20px;
+  border: 1px solid rgb(216 221 214 / 82%);
+  border-radius: 26px;
   background: #e9eee7;
+  box-shadow: var(--shadow-card);
   isolation: isolate;
 }
 

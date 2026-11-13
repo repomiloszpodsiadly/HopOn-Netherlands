@@ -1,9 +1,6 @@
 import { DOCUMENT } from '@angular/common';
-import { ChangeDetectionStrategy, Component, inject, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive } from '@angular/router';
-import { CityId, isCityId } from '../../core/models/catalog.models';
-
-const DEFAULT_CITY: CityId = 'amsterdam';
 
 @Component({
   selector: 'app-main-navigation',
@@ -15,12 +12,6 @@ const DEFAULT_CITY: CityId = 'amsterdam';
 export class MainNavigationComponent {
   private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
-
-  @Input() cityId: CityId = DEFAULT_CITY;
-
-  get navigationCityId(): CityId {
-    return isCityId(this.cityId) ? this.cityId : DEFAULT_CITY;
-  }
 
   get mapHref(): string {
     return this.router.serializeUrl(this.createMapUrlTree());
@@ -47,7 +38,6 @@ export class MainNavigationComponent {
 
   private createMapUrlTree() {
     return this.router.createUrlTree(['/'], {
-      queryParams: { city: this.navigationCityId },
       fragment: 'map-region',
     });
   }

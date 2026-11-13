@@ -2,6 +2,8 @@
 
 The normal `npm.cmd run test:e2e` suite uses a deterministic local MapLibre style. The real OpenFreeMap smoke is explicitly reported as skipped unless `HOPON_LIVE_MAP_SMOKE=1` is set.
 
+Explore shows Amsterdam, Rotterdam, and Utrecht together. Discover is intentionally hidden at desktop widths (1440px); Playwright verifies Discover at supported tablet and mobile widths instead of opening or restoring a desktop control.
+
 ## PowerShell opt-in
 
 Run from the repository root:

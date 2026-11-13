@@ -65,7 +65,7 @@
           <span>City</span>
           <select id="plan-city" [value]="currentCityId()" [disabled]="saving() || draftStore.cityConflict() !== null || draftStore.isValidating()" (change)="onCitySelected($event)">
             @for (cityId of cityIds; track cityId) {
-              <option [value]="cityId">{{ cityName(cityId) }}</option>
+              <option [value]="cityId" [selected]="cityId === currentCityId()">{{ cityName(cityId) }}</option>
             }
           </select>
         </label>
@@ -97,7 +97,7 @@
             <div class="editor-empty">
               <h3>Your day starts with one place.</h3>
               <p>Add places from Explore, or choose one of the city&#8217;s Discover picks.</p>
-              <a class="editor-button editor-button--quiet" [routerLink]="['/']" [queryParams]="{ city: draft.cityId }">Explore {{ cityName(draft.cityId) }}</a>
+              <a class="editor-button editor-button--quiet" [routerLink]="['/']">Explore all three cities</a>
             </div>
           } @else {
             <ol class="editor-place-list">
@@ -163,5 +163,5 @@
   </main>
 
   <footer class="plans-footer"><span>HopOn Netherlands</span><span>Your draft becomes a saved plan after you choose Save plan.</span></footer>
-  <app-main-navigation [cityId]="requestedCityId()" />
+  <app-main-navigation />
 </div>

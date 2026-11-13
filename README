@@ -1,6 +1,6 @@
 # HopOn Netherlands
 
-HopOn is an Angular 22 and Spring Boot 4 local-first guide to places in Amsterdam, Rotterdam and Utrecht. It has a curated OpenStreetMap catalog, search and filters, nearby mobility hubs, deterministic **Discover by Vibe** suggestions, and saved day plans. Discover is rule-based, not AI. The app does not provide transit routing, user accounts or a hosted production service.
+HopOn is an Angular 22 and Spring Boot 4 local-first guide to Amsterdam, Rotterdam and Utrecht. Explore loads all three cities together in one shared catalog and map; search and category filters apply across the catalog, and every place card identifies its city. Discover by Vibe is deterministic, not AI, and remains available in supported narrower layouts (up to 1100px). Saved day plans are single-city. The app does not provide transit routing, user accounts or a hosted production service.
 
 ## Requirements
 
@@ -33,9 +33,9 @@ For a phone on the same trusted Wi-Fi, run `npm.cmd run start:lan` in `frontend/
 
 ## Data and maps
 
-The city catalog is a static OpenStreetMap snapshot, not a live transit feed. A new plan is a temporary draft in that tab's `sessionStorage`. Saved plans live in in-memory H2: they survive browser refresh while Spring is running and reset when the backend process stops.
+The city catalog is a static OpenStreetMap snapshot, not a live transit feed. Amsterdam, Rotterdam and Utrecht appear together in Explore; search and category filters share that catalog, while each saved plan belongs to one city. A new plan is a temporary draft in that tab's `sessionStorage`. Saved plans live in in-memory H2: they survive browser refresh while Spring is running and reset when the backend process stops.
 
-The MapLibre basemap loads the public [OpenFreeMap](https://openfreemap.org/) Liberty style and needs an internet connection. If map tiles fail, catalog search and plan actions remain available; use the map's Retry control when the connection returns. MapLibre displays map attribution. See [OpenStreetMap copyright and licensing](https://www.openstreetmap.org/copyright) and [the photo attribution manifest](frontend/public/assets/catalog/assets-attribution.json) for the featured photos' sources, authors, licenses and change notes.
+The MapLibre map loads the public [OpenFreeMap](https://openfreemap.org/) Liberty style and needs an internet connection. It shows the three-city overview; pan and zoom to explore each area. An isolated tile, glyph or sprite failure can leave a partially rendered map without a Retry control. A startup timeout or WebGL loss can show the explicit map fallback and Retry action. Search, place cards and plan workflows remain usable when map resources fail; this is not an offline-map guarantee. MapLibre keeps map attribution visible. See [OpenStreetMap copyright and licensing](https://www.openstreetmap.org/copyright) and [the photo attribution manifest](frontend/public/assets/catalog/assets-attribution.json) for the featured photos' sources, authors, licenses and change notes.
 
 ## Checks
 
@@ -77,7 +77,7 @@ The [manual phone checklist](docs/HOP-006-manual-qa-checklist.md), [recruitment 
 
 ## Troubleshooting
 
-- **Port 8080 is occupied:** use the terminal that owns the existing backend. Avoid starting a second process. Restarting Spring clears saved H2 plans.
-- **Map is blank or unavailable:** check internet access and select **Retry map**. OpenFreeMap is an external service; the catalog and plans still work without tiles.
+- **Port 8080 is occupied:** identify the listening process with the PowerShell steps in the [manual QA checklist](docs/HOP-006-manual-qa-checklist.md). Do not stop an unknown process or start a second backend. Restarting Spring clears saved H2 plans.
+- **Map resources fail:** isolated tile errors may leave gaps without a Retry control. If startup reaches the explicit fallback, check internet access and use **Retry map**. OpenFreeMap is external; catalog and plan workflows remain available.
 - **Playwright cannot find Chromium:** run `npx playwright install chromium` from `frontend/`.
 - **Phone cannot connect:** confirm the phone and PC share a trusted Wi-Fi and that the Private firewall allows the Angular server. Do not open port 8080 or add router port forwarding.

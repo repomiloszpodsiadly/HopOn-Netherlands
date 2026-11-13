@@ -226,7 +226,8 @@
 .discover-city-group__heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
 .discover-city-group__heading h3 { margin: 0; font: 600 15px system-ui, sans-serif; }
 .discover-city-group__heading span { color: var(--color-muted); font-size: 12px; font-weight: 700; }
-.discover-warning { margin: 0 0 8px; color: #805b3f; font-size: 13px; }
+.discover-warning { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 8px; color: #805b3f; font-size: 13px; }
+.discover-warning p { margin: 0; }
 .discover-description, .discover-message { margin: 0; color: #53625f; font-size: 14px; line-height: 1.45; }
 .discover-description { color: #394a47; }
 .discover-picks { display: grid; gap: 3px; margin: 7px 0 0; padding: 0; list-style: none; }
@@ -257,6 +258,9 @@
 .place-results { grid-area: places; min-width: 0; min-height: 0; max-height: min(520px, calc(100dvh - 260px)); overflow-y: auto; overscroll-behavior: contain; scrollbar-color: #d8ddd7 transparent; scrollbar-width: thin; }
 .catalog-warning { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; padding: 10px 13px; border: 1px solid #e7d4ae; border-radius: 14px; background: #fffaf0; color: #765523; font-size: 13px; }
 .catalog-warning--map { margin: 0 0 10px; }
+.city-catalog-status { display: grid; gap: 4px; margin: -2px 0 8px; }
+.city-catalog-status__item { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0; color: #687674; font-size: 12px; line-height: 1.4; }
+.city-catalog-status__item--error { color: #744b3f; }
 .place-results__heading { position: sticky; z-index: 1; top: 0; display: flex; align-items: end; justify-content: space-between; gap: 12px; padding: 8px 0 11px; background: var(--color-canvas); pointer-events: none; }
 .eyebrow--small { margin: 0 0 5px; font-size: var(--text-caption); letter-spacing: 1px; }
 .place-results__heading h2 { margin: 0; font: 400 23px/1.1 Georgia, serif; letter-spacing: -.45px; }

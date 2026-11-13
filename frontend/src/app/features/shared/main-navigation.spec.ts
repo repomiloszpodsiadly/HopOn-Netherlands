@@ -2,17 +2,14 @@ import { Component } from '@angular/core';
 import { provideRouter, Router } from '@angular/router';
 import { RouterTestingHarness } from '@angular/router/testing';
 import { TestBed } from '@angular/core/testing';
-import { CityId } from '../../core/models/catalog.models';
 import { MainNavigationComponent } from './main-navigation';
 
 @Component({
   standalone: true,
   imports: [MainNavigationComponent],
-  template: '<app-main-navigation [cityId]="cityId" />',
+  template: '<app-main-navigation />',
 })
-class PlansPageWithCityContext {
-  cityId: CityId = 'rotterdam';
-}
+class PlansPageWithCityContext {}
 
 @Component({
   standalone: true,
@@ -38,45 +35,42 @@ describe('MainNavigationComponent', () => {
     });
   });
 
-  it('navigates from Plans to the known city map and focuses the map region', async () => {
-    const harness = await RouterTestingHarness.create('/plans');
+  it('navigates from a city-scoped plan URL to the shared map and focuses the map region', async () => {
+    const harness = await RouterTestingHarness.create('/plans?city=rotterdam');
     const mapLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
       '.bottom-nav__item[href$="#map-region"]',
     );
-    expect(mapLink?.getAttribute('href')).toBe('/?city=rotterdam#map-region');
+    expect(mapLink?.getAttribute('href')).toBe('/#map-region');
 
     mapLink?.click();
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(TestBed.inject(Router).url).toBe('/?city=rotterdam#map-region');
+    expect(TestBed.inject(Router).url).toBe('/#map-region');
     expect(document.activeElement?.id).toBe('map-region');
   });
 
-  it('uses Amsterdam as the stable default when Plans has no city context', async () => {
+  it('uses the same shared map link when Plans has no city context', async () => {
     const harness = await RouterTestingHarness.create('/plans-default');
     const mapLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
       '.bottom-nav__item[href$="#map-region"]',
     );
-    expect(mapLink?.getAttribute('href')).toBe('/?city=amsterdam#map-region');
+    expect(mapLink?.getAttribute('href')).toBe('/#map-region');
 
     mapLink?.click();
     await harness.fixture.whenStable();
     harness.detectChanges();
 
-    expect(TestBed.inject(Router).url).toBe('/?city=amsterdam#map-region');
+    expect(TestBed.inject(Router).url).toBe('/#map-region');
     expect(document.activeElement?.id).toBe('map-region');
   });
 
-  it('replaces an unknown city context with the stable default', async () => {
-    const harness = await RouterTestingHarness.create('/plans');
-    const plansPage = harness.routeDebugElement?.componentInstance as PlansPageWithCityContext;
-    plansPage.cityId = 'haarlem' as CityId;
-    harness.detectChanges();
-
+  it('does not carry a legacy unknown city query into shared map navigation', async () => {
+    const harness = await RouterTestingHarness.create('/plans?city=haarlem');
     const mapLink = harness.routeNativeElement?.querySelector<HTMLAnchorElement>(
       '.bottom-nav__item[href$="#map-region"]',
     );
-    expect(mapLink?.getAttribute('href')).toBe('/?city=amsterdam#map-region');
+    expect(mapLink?.getAttribute('href')).toBe('/#map-region');
+    expect(mapLink?.getAttribute('href')).not.toContain('city=');
   });
 });

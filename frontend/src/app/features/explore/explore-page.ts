@@ -17,8 +17,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   catchError,
   finalize,
-  forkJoin,
   map,
+  merge,
   type Observable,
   of,
   startWith,
@@ -52,33 +52,50 @@ import { PlaceResultsListComponent, type PlaceResultsView } from './place-result
 
 type ApiState = 'checking' | 'online' | 'offline' | 'unexpected';
 
-type PlaceLoadState =
-  | Readonly<{ cityId: CityId; places: readonly PlaceDto[]; error: null }>
-  | Readonly<{ cityId: CityId; places: null; error: string }>;
+type CityResourceStatus = 'loading' | 'success' | 'empty' | 'error';
 
-type HubLoadState =
-  | Readonly<{ cityId: CityId; hubs: readonly MobilityHubDto[]; error: null }>
-  | Readonly<{ cityId: CityId; hubs: null; error: string }>;
+type CityResourceState<T> = Readonly<{
+  status: CityResourceStatus;
+  data: readonly T[] | null;
+  error: string | null;
+}>;
 
-type DiscoverRequest = Readonly<{ theme: DiscoverTheme }>;
+type PlaceLoadResult = Readonly<{
+  cityId: CityId;
+  data: readonly PlaceDto[] | null;
+  error: string | null;
+}>;
+
+type HubLoadResult = Readonly<{
+  cityId: CityId;
+  data: readonly MobilityHubDto[] | null;
+  error: string | null;
+}>;
+
+type DiscoverRequest = Readonly<{ theme: DiscoverTheme; requestId: number }>;
 
 type DiscoverCityGroup = Readonly<{
   cityId: CityId;
+  status: 'loading' | 'success' | 'empty' | 'error';
   description: string | null;
   placeIds: readonly string[];
   error: string | null;
 }>;
 
 type DiscoverCityOutcome = Readonly<{
+  request: DiscoverRequest;
   cityId: CityId;
   response: DiscoverDto | null;
   error: string | null;
 }>;
 
-type DiscoverResult =
-  | Readonly<{ status: 'idle' }>
-  | Readonly<{ status: 'success'; request: DiscoverRequest; groups: readonly DiscoverCityGroup[] }>
-  | Readonly<{ status: 'error'; request: DiscoverRequest; error: string }>;
+function initialCityResourceStates<T>(): Record<CityId, CityResourceState<T>> {
+  return Object.fromEntries(CITY_IDS.map((cityId) => [cityId, {
+    status: 'loading',
+    data: null,
+    error: null,
+  }])) as Record<CityId, CityResourceState<T>>;
+}
 
 const DEFAULT_CITY: CityId = 'amsterdam';
 const INITIAL_PLACE_LIMIT = 40;
@@ -116,6 +133,8 @@ export class ExplorePage {
   private readonly retryHubs$ = new Subject<void>();
   private readonly discoverRequest$ = new Subject<DiscoverRequest | null>();
   private healthCheckPending = false;
+  private discoverRequestId = 0;
+  private readonly pendingDiscoverOutcomes = new Map<CityId, DiscoverCityOutcome>();
   private validatingDraftCityId: CityId | null = null;
   private detailFocusReturn: HTMLElement | null = null;
   private draftFocusReturn: HTMLElement | null = null;
@@ -147,13 +166,54 @@ export class ExplorePage {
   readonly cities = signal<readonly CityDto[]>([]);
   readonly citiesLoading = signal(true);
   readonly citiesError = signal<string | null>(null);
-  readonly places = signal<readonly PlaceDto[]>([]);
-  readonly placesLoading = signal(true);
-  readonly placesError = signal<string | null>(null);
-  readonly hubs = signal<readonly MobilityHubDto[]>([]);
-  readonly hubsLoading = signal(true);
-  readonly hubsError = signal<string | null>(null);
-  readonly placesWarning = signal<string | null>(null);
+  readonly placeCityStates = signal(initialCityResourceStates<PlaceDto>());
+  readonly places = computed(() => CITY_IDS.flatMap((cityId) =>
+    this.placeCityStates()[cityId].data ?? [],
+  ));
+  readonly placesLoading = computed(() => {
+    const states = CITY_IDS.map((cityId) => this.placeCityStates()[cityId]);
+    const hasPlaces = states.some((state) => (state.data?.length ?? 0) > 0);
+    return !hasPlaces && states.some((state) => state.status === 'loading');
+  });
+  readonly placesError = computed(() => {
+    const states = CITY_IDS.map((cityId) => ({ cityId, ...this.placeCityStates()[cityId] }));
+    const hasPlaces = states.some((state) => (state.data?.length ?? 0) > 0);
+    const stillLoading = states.some((state) => state.status === 'loading');
+    if (hasPlaces || stillLoading) {
+      return null;
+    }
+    const failed = states.filter((state) => state.status === 'error');
+    return failed.length === 0
+      ? null
+      : `Places could not be loaded for ${failed.map((state) => CITY_LABELS[state.cityId]).join(', ')}.`;
+  });
+  readonly placesWarning = computed(() => {
+    const states = CITY_IDS.map((cityId) => ({ cityId, ...this.placeCityStates()[cityId] }));
+    const failed = states.filter((state) => state.status === 'error');
+    const hasAvailableCatalog = states.some((state) => state.data !== null);
+    return failed.length > 0 && hasAvailableCatalog
+      ? `Some places are unavailable: ${failed.map((state) => CITY_LABELS[state.cityId]).join(', ')} could not load.`
+      : null;
+  });
+  readonly hasPlaceCatalogNotices = computed(() =>
+    CITY_IDS.some((cityId) => this.placeCityStates()[cityId].status !== 'success'),
+  );
+  readonly hubCityStates = signal(initialCityResourceStates<MobilityHubDto>());
+  readonly hubs = computed(() => CITY_IDS.flatMap((cityId) =>
+    this.hubCityStates()[cityId].data ?? [],
+  ));
+  readonly selectedHubState = computed(() => {
+    const place = this.selectedPlace();
+    return place === null ? null : this.hubCityStates()[place.cityId];
+  });
+  readonly hubsLoading = computed(() => {
+    const state = this.selectedHubState();
+    return state !== null && state.status === 'loading' && state.data === null;
+  });
+  readonly hubsError = computed(() => {
+    const state = this.selectedHubState();
+    return state?.status === 'error' ? state.error : null;
+  });
   readonly searchQuery = signal('');
   readonly activeCategory = signal<PlaceCategory | null>(null);
   readonly selectedPlaceId = signal<string | null>(null);
@@ -186,7 +246,9 @@ export class ExplorePage {
   });
   readonly nearbyHubs = computed<readonly NearbyHub[]>(() => {
     const place = this.selectedPlace();
-    return place === null ? [] : nearbyHubsForPlace(place, this.hubs());
+    return place === null
+      ? []
+      : nearbyHubsForPlace(place, this.hubCityStates()[place.cityId].data ?? []);
   });
   readonly filteredPlaces = computed(() => {
     const query = normalizeSearch(this.searchQuery().trim());
@@ -405,12 +467,20 @@ export class ExplorePage {
   }
 
   private requestDiscoverTheme(theme: DiscoverTheme): void {
+    const request = { theme, requestId: ++this.discoverRequestId } satisfies DiscoverRequest;
+    this.pendingDiscoverOutcomes.clear();
     this.discoverState.set('loading');
-    this.discoverGroups.set([]);
+    this.discoverGroups.set(CITY_IDS.map((cityId) => ({
+      cityId,
+      status: 'loading',
+      description: null,
+      placeIds: [],
+      error: null,
+    })));
     this.discoverWarning.set(null);
     this.discoverError.set(null);
     this.discoverPlaceIds.set([]);
-    this.discoverRequest$.next({ theme });
+    this.discoverRequest$.next(request);
   }
 
   addPlaceToPlan(placeId: string, trigger?: EventTarget | null): void {
@@ -553,50 +623,47 @@ export class ExplorePage {
       .pipe(
         startWith(undefined),
         switchMap(() => {
-          this.placesLoading.set(true);
-          this.placesError.set(null);
-          this.placesWarning.set(null);
-          return forkJoin(
-            CITY_IDS.map((cityId) =>
-              this.placesApi.getPlaces(cityId).pipe(
-                map((places) => ({ cityId, places, error: null }) satisfies PlaceLoadState),
-                catchError((error: unknown) =>
-                  of({
-                    cityId,
-                    places: null,
-                    error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]}`),
-                  } satisfies PlaceLoadState),
-                ),
+          this.placeCityStates.update((states) => Object.fromEntries(CITY_IDS.map((cityId) => [cityId, {
+            status: 'loading',
+            data: states[cityId].data,
+            error: null,
+          }])) as Record<CityId, CityResourceState<PlaceDto>>);
+          return merge(...CITY_IDS.map((cityId) =>
+            this.placesApi.getPlaces(cityId).pipe(
+              map((places) => ({
+                cityId,
+                data: places.filter((place) => place.cityId === cityId),
+                error: null,
+              }) satisfies PlaceLoadResult),
+              catchError((error: unknown) =>
+                of({
+                  cityId,
+                  data: null,
+                  error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]}`),
+                } satisfies PlaceLoadResult),
               ),
             ),
-          );
+          ));
         }),
         takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe((results) => {
-        const successful = results.filter((result) => result.error === null);
-        const failed = results.filter((result) => result.error !== null);
-        const loadedPlaces = successful.flatMap((result) => result.places ?? []);
-        this.places.set(loadedPlaces);
-        this.placesLoading.set(false);
-        this.placesError.set(
-          successful.length === 0 && failed.length > 0
-            ? failed.map((result) => result.error).join(' ')
-            : null,
-        );
-        this.placesWarning.set(
-          failed.length > 0 && successful.length > 0
-            ? `Some places are unavailable: ${failed.map((result) => CITY_LABELS[result.cityId]).join(', ')} could not load.`
-            : null,
-        );
-
+      .subscribe((result) => {
+        const previous = this.placeCityStates()[result.cityId];
+        const next: CityResourceState<PlaceDto> = result.error !== null
+          ? { status: 'error', data: previous.data, error: result.error }
+          : {
+              status: result.data?.length ? 'success' : 'empty',
+              data: result.data ?? [],
+              error: null,
+            };
+        this.placeCityStates.update((states) => ({ ...states, [result.cityId]: next }));
+        this.resolvePendingDiscoverForCity(result.cityId);
         const pendingCityId = this.draftStore.pendingCityId();
-        if (pendingCityId !== null) {
-          const cityResult = results.find((result) => result.cityId === pendingCityId);
-          if (cityResult?.error !== null && cityResult?.error !== undefined) {
-            this.draftStore.failValidation(cityResult.error);
-          } else if (cityResult?.places !== null && cityResult?.places !== undefined) {
-            this.draftStore.validatePendingDraft(pendingCityId, cityResult.places);
+        if (pendingCityId === result.cityId) {
+          if (result.error !== null) {
+            this.draftStore.failValidation(result.error);
+          } else {
+            this.draftStore.validatePendingDraft(result.cityId, result.data ?? []);
           }
         }
       });
@@ -607,103 +674,69 @@ export class ExplorePage {
       .pipe(
         startWith(undefined),
         switchMap(() => {
-          this.hubs.set([]);
-          this.hubsLoading.set(true);
-          this.hubsError.set(null);
-          return forkJoin(
-            CITY_IDS.map((cityId) =>
-              this.stopsApi.getStops(cityId).pipe(
-                map((hubs) => ({ cityId, hubs, error: null }) satisfies HubLoadState),
-                catchError((error: unknown) =>
-                  of({
-                    cityId,
-                    hubs: null,
-                    error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]} nearby hubs`),
-                  } satisfies HubLoadState),
-                ),
+          this.hubCityStates.update((states) => Object.fromEntries(CITY_IDS.map((cityId) => [cityId, {
+            status: 'loading',
+            data: states[cityId].data,
+            error: null,
+          }])) as Record<CityId, CityResourceState<MobilityHubDto>>);
+          return merge(...CITY_IDS.map((cityId) =>
+            this.stopsApi.getStops(cityId).pipe(
+              map((hubs) => ({
+                cityId,
+                data: hubs.filter((hub) => hub.cityId === cityId),
+                error: null,
+              }) satisfies HubLoadResult),
+              catchError((error: unknown) =>
+                of({
+                  cityId,
+                  data: null,
+                  error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]} nearby hubs`),
+                } satisfies HubLoadResult),
               ),
             ),
-          );
+          ));
         }),
         takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe((results) => {
-        const successful = results.filter((result) => result.error === null);
-        const failed = results.filter((result) => result.error !== null);
-        this.hubs.set(successful.flatMap((result) => result.hubs ?? []));
-        this.hubsLoading.set(false);
-        this.hubsError.set(
-          successful.length === 0 && failed.length > 0
-            ? failed.map((result) => result.error).join(' ')
-            : null,
-        );
+      .subscribe((result) => {
+        const previous = this.hubCityStates()[result.cityId];
+        const next: CityResourceState<MobilityHubDto> = result.error !== null
+          ? { status: 'error', data: previous.data, error: result.error }
+          : {
+              status: result.data?.length ? 'success' : 'empty',
+              data: result.data ?? [],
+              error: null,
+            };
+        this.hubCityStates.update((states) => ({ ...states, [result.cityId]: next }));
       });
   }
 
   private watchDiscoverRequests(): void {
     this.discoverRequest$
       .pipe(
-        switchMap((request): Observable<DiscoverResult> => {
+        switchMap((request): Observable<DiscoverCityOutcome | null> => {
           if (request === null) {
-            return of({ status: 'idle' });
+            return of(null);
           }
-          return forkJoin(
-            CITY_IDS.map((cityId) =>
-              this.discoverApi.discover(cityId, request.theme).pipe(
-                map((response) => ({ cityId, response, error: null } as DiscoverCityOutcome)),
-                catchError((error: unknown) =>
-                  of({
-                    cityId,
-                    response: null,
-                    error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]} picks`),
-                  } as DiscoverCityOutcome),
-                ),
+          return merge(...CITY_IDS.map((cityId) =>
+            this.discoverApi.discover(cityId, request.theme).pipe(
+              map((response) => ({ request, cityId, response, error: null }) satisfies DiscoverCityOutcome),
+              catchError((error: unknown) =>
+                of({
+                  request,
+                  cityId,
+                  response: null,
+                  error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]} picks`),
+                } satisfies DiscoverCityOutcome),
               ),
             ),
-          ).pipe(
-            map((outcomes) => {
-              const groups = outcomes.map((outcome): DiscoverCityGroup => {
-                if (outcome.error !== null || outcome.response === null) {
-                  return {
-                    cityId: outcome.cityId,
-                    description: null,
-                    placeIds: [],
-                    error: outcome.error ?? `Could not load ${CITY_LABELS[outcome.cityId]} picks.`,
-                  };
-                }
-                if (outcome.response.cityId !== outcome.cityId || outcome.response.theme !== request.theme) {
-                  return {
-                    cityId: outcome.cityId,
-                    description: null,
-                    placeIds: [],
-                    error: 'The discovery reply did not match this city and theme.',
-                  };
-                }
-
-                const cityPlaceIds = new Set(
-                  this.places()
-                    .filter((place) => place.cityId === outcome.cityId)
-                    .map((place) => place.id),
-                );
-                const placeIds = [...new Set(Array.isArray(outcome.response.placeIds) ? outcome.response.placeIds : [])]
-                  .filter((placeId): placeId is string => typeof placeId === 'string')
-                  .filter((placeId) => cityPlaceIds.has(placeId))
-                  .slice(0, 5);
-                return {
-                  cityId: outcome.cityId,
-                  description: outcome.response.description,
-                  placeIds,
-                  error: null,
-                };
-              });
-              return { status: 'success', request, groups } satisfies DiscoverResult;
-            }),
-          );
+          ));
         }),
         takeUntilDestroyed(this.destroyRef),
       )
-      .subscribe((result) => {
-        if (result.status === 'idle') {
+      .subscribe((outcome) => {
+        if (outcome === null) {
+          this.pendingDiscoverOutcomes.clear();
           this.discoverState.set('idle');
           this.discoverGroups.set([]);
           this.discoverWarning.set(null);
@@ -711,32 +744,108 @@ export class ExplorePage {
           this.discoverPlaceIds.set([]);
           return;
         }
-        if (result.request.theme !== this.activeDiscoverTheme()) {
-          return;
-        }
-        if (result.status === 'error') {
-          this.discoverState.set('error');
-          this.discoverError.set(result.error);
-          return;
-        }
-        const groups = result.groups;
-        const failedGroups = groups.filter((group) => group.error !== null);
-        const availableGroups = groups.filter((group) => group.error === null);
-        if (availableGroups.length === 0 && failedGroups.length > 0) {
-          this.discoverState.set('error');
-          this.discoverError.set(failedGroups.map((group) => group.error).join(' '));
-          return;
-        }
-        this.discoverGroups.set(groups);
-        this.discoverWarning.set(
-          failedGroups.length > 0
-            ? `Could not load picks for ${failedGroups.map((group) => CITY_LABELS[group.cityId]).join(', ')}.`
-            : null,
-        );
-        this.discoverPlaceIds.set(groups.flatMap((group) => group.placeIds));
-        this.discoverError.set(null);
-        this.discoverState.set('loaded');
+        this.acceptDiscoverOutcome(outcome);
       });
+  }
+
+  private acceptDiscoverOutcome(outcome: DiscoverCityOutcome): void {
+    const { request, cityId } = outcome;
+    if (request.requestId !== this.discoverRequestId || request.theme !== this.activeDiscoverTheme()) {
+      return;
+    }
+
+    const cityState = this.placeCityStates()[cityId];
+    if (outcome.error === null && cityState.data === null && cityState.status === 'loading') {
+      this.pendingDiscoverOutcomes.set(cityId, outcome);
+      return;
+    }
+
+    this.setDiscoverCityGroup(this.createDiscoverCityGroup(outcome, cityState));
+  }
+
+  private resolvePendingDiscoverForCity(cityId: CityId): void {
+    const outcome = this.pendingDiscoverOutcomes.get(cityId);
+    if (outcome === undefined) {
+      return;
+    }
+    if (
+      outcome.request.requestId !== this.discoverRequestId
+      || outcome.request.theme !== this.activeDiscoverTheme()
+    ) {
+      this.pendingDiscoverOutcomes.delete(cityId);
+      return;
+    }
+    const cityState = this.placeCityStates()[cityId];
+    if (cityState.status === 'loading' && cityState.data === null) {
+      return;
+    }
+    this.pendingDiscoverOutcomes.delete(cityId);
+    this.setDiscoverCityGroup(this.createDiscoverCityGroup(outcome, cityState));
+  }
+
+  private createDiscoverCityGroup(
+    outcome: DiscoverCityOutcome,
+    cityState: CityResourceState<PlaceDto>,
+  ): DiscoverCityGroup {
+    const { cityId, request, response } = outcome;
+    if (outcome.error !== null || response === null) {
+      return {
+        cityId,
+        status: 'error',
+        description: null,
+        placeIds: [],
+        error: outcome.error ?? `Could not load ${CITY_LABELS[cityId]} picks.`,
+      };
+    }
+    if (cityState.data === null) {
+      return {
+        cityId,
+        status: 'error',
+        description: null,
+        placeIds: [],
+        error: `Could not verify ${CITY_LABELS[cityId]} picks because its place catalog is unavailable.`,
+      };
+    }
+    if (response.cityId !== cityId || response.theme !== request.theme) {
+      return {
+        cityId,
+        status: 'error',
+        description: null,
+        placeIds: [],
+        error: 'The discovery reply did not match this city and theme.',
+      };
+    }
+
+    const cityPlaceIds = new Set(cityState.data.map((place) => place.id));
+    const placeIds = [...new Set(Array.isArray(response.placeIds) ? response.placeIds : [])]
+      .filter((placeId): placeId is string => typeof placeId === 'string')
+      .filter((placeId) => cityPlaceIds.has(placeId))
+      .slice(0, 5);
+    const hasUnverifiedPicks = (response.placeIds?.length ?? 0) > 0 && placeIds.length === 0;
+    return {
+      cityId,
+      status: hasUnverifiedPicks ? 'error' : placeIds.length > 0 ? 'success' : 'empty',
+      description: hasUnverifiedPicks ? null : response.description,
+      placeIds: hasUnverifiedPicks ? [] : placeIds,
+      error: hasUnverifiedPicks ? `Could not verify the ${CITY_LABELS[cityId]} picks against its place catalog.` : null,
+    };
+  }
+
+  private setDiscoverCityGroup(group: DiscoverCityGroup): void {
+    const groups = this.discoverGroups().map((current) => current.cityId === group.cityId ? group : current);
+    this.discoverGroups.set(groups);
+    this.discoverPlaceIds.set(groups.flatMap((cityGroup) => cityGroup.placeIds));
+
+    const failedGroups = groups.filter((cityGroup) => cityGroup.status === 'error');
+    const resolvedGroups = groups.filter((cityGroup) => cityGroup.status === 'success' || cityGroup.status === 'empty');
+    const stillLoading = groups.some((cityGroup) => cityGroup.status === 'loading');
+    this.discoverWarning.set(failedGroups.length > 0
+      ? `Could not load or verify picks for ${failedGroups.map((cityGroup) => CITY_LABELS[cityGroup.cityId]).join(', ')}.`
+      : null);
+    this.discoverError.set(!stillLoading && resolvedGroups.length === 0
+      ? failedGroups.map((cityGroup) => cityGroup.error).filter((error): error is string => error !== null).join(' ')
+      : null);
+    this.discoverState.set(stillLoading ? 'loading' : resolvedGroups.length > 0 ? 'loaded' : 'error');
   }
 
   private validateStoredDraftForCity(cityId: CityId): void {

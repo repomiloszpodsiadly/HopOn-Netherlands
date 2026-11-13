@@ -80,48 +80,52 @@
       @if (activeDiscoverTheme(); as theme) {
         <div class="discover-results" [attr.aria-busy]="discoverState() === 'loading'">
           @if (discoverState() === 'loading') {
-            <p class="discover-message" role="status">Finding {{ theme }} picks across all three cities&#8230;</p>
-          } @else if (discoverState() === 'error') {
+            <p class="discover-message" role="status">Finding {{ theme }} picks across all three cities. Results appear as each city is ready&#8230;</p>
+          }
+          @if (discoverState() === 'error') {
             <div class="discover-error" role="alert">
               <p>{{ discoverError() }}</p>
               <button class="text-button" type="button" (click)="retryDiscover()">Retry</button>
             </div>
-          } @else {
-            @if (discoverWarning(); as warning) {
-              <p class="discover-warning" role="status">{{ warning }}</p>
-            }
-            @for (group of discoverGroups(); track group.cityId) {
-              <section class="discover-city-group" [attr.aria-label]="'Discover picks in ' + cityName(group.cityId)">
-                <div class="discover-city-group__heading">
-                  <h3>{{ cityName(group.cityId) }}</h3>
-                  @if (group.error === null) {
-                    <span>{{ group.placeIds.length }} picks</span>
-                  }
-                </div>
-                @if (group.error; as groupError) {
-                  <p class="discover-message" role="status">{{ groupError }}</p>
-                } @else if (group.placeIds.length === 0) {
-                  <p class="discover-message">No verified places matched this theme here.</p>
-                } @else {
-                  <p class="discover-description">{{ group.description }}</p>
-                  <ul class="discover-picks">
-                    @for (placeId of group.placeIds; track placeId) {
-                      @if (discoverPlacesById(placeId); as place) {
-                        <li>
-                          <button type="button" class="discover-pick" (click)="selectDiscoverPlace(place.id, $event.currentTarget)">
-                            <span class="discover-pick__name">{{ place.name }}</span>
-                            <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
-                          </button>
-                        </li>
-                      }
-                    }
-                  </ul>
-                  <button class="button button--secondary discover-add" type="button" (click)="addDiscoverSelection(group.cityId, $event.currentTarget)">
-                    Add {{ cityName(group.cityId) }} picks to plan
-                  </button>
+          } @else if (discoverWarning(); as warning) {
+            <div class="discover-warning" role="status">
+              <p>{{ warning }}</p>
+              <button class="text-button" type="button" (click)="retryDiscover()">Retry all cities</button>
+            </div>
+          }
+          @for (group of discoverGroups(); track group.cityId) {
+            <section class="discover-city-group" [attr.aria-label]="'Discover picks in ' + cityName(group.cityId)">
+              <div class="discover-city-group__heading">
+                <h3>{{ cityName(group.cityId) }}</h3>
+                @if (group.status === 'success' || group.status === 'empty') {
+                  <span>{{ group.placeIds.length }} picks</span>
                 }
-              </section>
-            }
+              </div>
+              @if (group.status === 'loading') {
+                <p class="discover-message" role="status">Finding verified picks in {{ cityName(group.cityId) }}&#8230;</p>
+              } @else if (group.status === 'error') {
+                <p class="discover-message" role="status">{{ group.error }}</p>
+              } @else if (group.status === 'empty') {
+                <p class="discover-message">No verified places matched this theme here.</p>
+              } @else {
+                <p class="discover-description">{{ group.description }}</p>
+                <ul class="discover-picks">
+                  @for (placeId of group.placeIds; track placeId) {
+                    @if (discoverPlacesById(placeId); as place) {
+                      <li>
+                        <button type="button" class="discover-pick" (click)="selectDiscoverPlace(place.id, $event.currentTarget)">
+                          <span class="discover-pick__name">{{ place.name }}</span>
+                          <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
+                        </button>
+                      </li>
+                    }
+                  }
+                </ul>
+                <button class="button button--secondary discover-add" type="button" (click)="addDiscoverSelection(group.cityId, $event.currentTarget)">
+                  Add {{ cityName(group.cityId) }} picks to plan
+                </button>
+              }
+            </section>
           }
         </div>
       }
@@ -140,6 +144,28 @@
           <span class="result-count" aria-live="polite">{{ resultCountLabel() }}</span>
         }
       </div>
+      @if (hasPlaceCatalogNotices()) {
+        <div class="city-catalog-status" aria-label="Place catalog status by city">
+          @for (cityId of cityIds; track cityId) {
+            @let state = placeCityStates()[cityId];
+            @if (state.status === 'loading') {
+              <p class="city-catalog-status__item" role="status">
+                {{ state.data === null ? 'Loading' : 'Refreshing' }} places for {{ cityName(cityId) }}&#8230;
+              </p>
+            } @else if (state.status === 'error') {
+              <div class="city-catalog-status__item city-catalog-status__item--error" role="alert">
+                <span>
+                  @if (state.data === null) { Places unavailable for {{ cityName(cityId) }}. {{ state.error }} }
+                  @else { Could not refresh {{ cityName(cityId) }} places; showing the last loaded catalog. {{ state.error }} }
+                </span>
+                <button class="text-button" type="button" (click)="retryPlaces()">Retry</button>
+              </div>
+            } @else if (state.status === 'empty') {
+              <p class="city-catalog-status__item" role="status">No places are currently listed for {{ cityName(cityId) }}.</p>
+            }
+          }
+        </div>
+      }
 
       <app-place-results-list
         [view]="placeResultsView()"
@@ -207,7 +233,9 @@
           [categoryLabel]="categoryLabels[place.category]"
           [nearbyHubs]="nearbyHubs()"
           [hubsLoading]="hubsLoading()"
+          [hubsRefreshing]="selectedHubState()?.status === 'loading' && selectedHubState()?.data !== null"
           [hubsError]="hubsError()"
+          [hubCatalogLoaded]="selectedHubState()?.data !== null"
           [draftContainsPlace]="hasPlaceInDraft(place.id)"
           (closed)="closePlaceDetails()"
           (addPlace)="addDetailPlaceToPlan($event)"

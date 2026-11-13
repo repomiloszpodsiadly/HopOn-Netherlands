@@ -39,6 +39,7 @@ interface MockMap {
   getZoom: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
   setPadding: ReturnType<typeof vi.fn>;
+  fitBounds: ReturnType<typeof vi.fn>;
   flyTo: ReturnType<typeof vi.fn>;
   easeTo: ReturnType<typeof vi.fn>;
   off: ReturnType<typeof vi.fn>;
@@ -59,6 +60,7 @@ vi.mock('maplibre-gl', () => {
     readonly getZoom = vi.fn(() => 12.2);
     readonly stop = vi.fn();
     readonly setPadding = vi.fn();
+    readonly fitBounds = vi.fn();
     readonly flyTo = vi.fn();
     readonly easeTo = vi.fn();
     readonly off = vi.fn((event: string, layerOrHandler: string | MockHandler, handler?: MockHandler) => {
@@ -173,6 +175,15 @@ const ROTTERDAM: CityDto = {
   defaultZoom: 12.2,
 };
 
+const UTRECHT: CityDto = {
+  id: 'utrecht',
+  name: 'Utrecht',
+  center: { latitude: 52.09, longitude: 5.12 },
+  defaultZoom: 12.4,
+};
+
+const CITIES: readonly CityDto[] = [CITY, ROTTERDAM, UTRECHT];
+
 const PLACE: PlaceDto = {
   id: 'place-1',
   cityId: 'amsterdam',
@@ -202,16 +213,24 @@ const ROTTERDAM_PLACE: PlaceDto = {
   longitude: 4.6,
 };
 
+const UTRECHT_PLACE: PlaceDto = {
+  ...PLACE,
+  id: 'utrecht-place',
+  cityId: 'utrecht',
+  latitude: 52.0907,
+  longitude: 5.1214,
+};
+
 @Component({
   standalone: true,
   imports: [MapViewportComponent],
   template: `
-    <app-map-viewport [city]="city" [places]="places" />
+    <app-map-viewport [cities]="cities" [places]="places" />
     <ul><li class="place-name">{{ places[0]?.name }}</li></ul>
   `,
 })
 class MapWithPlaceListHost {
-  readonly city = CITY;
+  readonly cities = CITIES;
   readonly places = [PLACE];
 }
 
@@ -234,7 +253,7 @@ describe('MapViewportComponent', () => {
 
   it('creates one map, updates its GeoJSON source, and removes listeners on destroy', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
 
@@ -242,6 +261,17 @@ describe('MapViewportComponent', () => {
     expect(map.options['style']).toBe('https://tiles.openfreemap.org/styles/liberty');
     map.emit('load');
     fixture.detectChanges();
+    expect(map.fitBounds).toHaveBeenCalledOnce();
+    const [[west, south], [east, north]] = map.fitBounds.mock.calls[0][0] as number[][];
+    expect(west).toBeCloseTo(4.35);
+    expect(south).toBeCloseTo(51.84);
+    expect(east).toBeCloseTo(5.25);
+    expect(north).toBeCloseTo(52.45);
+    expect(map.fitBounds.mock.calls[0][1]).toEqual({
+      padding: { top: 54, right: 54, bottom: 54, left: 54 },
+      maxZoom: 9.5,
+      duration: 650,
+    });
 
     const source = map.getSource('hopon-places')!;
     const initialFeature = (source.data as { features: { id: string; geometry: { coordinates: number[] } }[] })
@@ -275,29 +305,33 @@ describe('MapViewportComponent', () => {
     expect(map.getCanvas().removeEventListener).toHaveBeenCalledOnce();
   });
 
-  it('moves the existing map to the latest city after a delayed style load', async () => {
+  it('fits all three city centers after the delayed style load without recreating the map', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.detectChanges();
     const map = await waitForMap();
 
-    fixture.componentRef.setInput('city', ROTTERDAM);
-    fixture.detectChanges();
     map.emit('load');
 
     expect(mockMapState.instances).toHaveLength(1);
-    expect(map.flyTo).toHaveBeenCalledWith({
-      center: [ROTTERDAM.center.longitude, ROTTERDAM.center.latitude],
-      zoom: ROTTERDAM.defaultZoom,
-      duration: expect.any(Number),
-    });
+    expect(map.options['center']).toEqual([CITY.center.longitude, CITY.center.latitude]);
+    expect(map.options['zoom']).toBe(7);
+    expect(map.fitBounds).toHaveBeenCalledOnce();
+    const [[west, south], [east, north]] = map.fitBounds.mock.calls[0][0] as number[][];
+    expect(west).toBeCloseTo(4.35);
+    expect(south).toBeCloseTo(51.84);
+    expect(east).toBeCloseTo(5.25);
+    expect(north).toBeCloseTo(52.45);
+    expect(map.fitBounds.mock.calls[0][1]).toEqual(expect.objectContaining({ maxZoom: 9.5 }));
     fixture.destroy();
   });
 
-  it('focuses a selected marker beyond cluster zoom once without recreating the map', async () => {
+  it.each([DISTANT_PLACE, ROTTERDAM_PLACE, UTRECHT_PLACE])(
+    'focuses the selected $cityId marker without recreating the map',
+    async (place) => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
-    fixture.componentRef.setInput('places', [DISTANT_PLACE]);
+    fixture.componentRef.setInput('cities', CITIES);
+    fixture.componentRef.setInput('places', [place]);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     const map = await waitForMap();
@@ -310,7 +344,7 @@ describe('MapViewportComponent', () => {
       fixture.componentRef.setInput('selectedPlaceId', placeId);
     });
     map.emit('click', 'hopon-place-points', {
-      features: [{ properties: { placeId: DISTANT_PLACE.id } }],
+      features: [{ properties: { placeId: place.id } }],
     });
     fixture.detectChanges();
     await fixture.whenStable();
@@ -318,31 +352,31 @@ describe('MapViewportComponent', () => {
 
     expect(map.flyTo).toHaveBeenCalledOnce();
     expect(map.flyTo).toHaveBeenCalledWith({
-      center: [DISTANT_PLACE.longitude, DISTANT_PLACE.latitude],
+      center: [place.longitude, place.latitude],
       zoom: 14,
       duration: 450,
       padding: { top: 0, right: 0, bottom: 0, left: 0 },
     });
     expect(map.getSource('hopon-places')?.data).toMatchObject({
-      features: [{ id: DISTANT_PLACE.id, properties: { selected: true } }],
+      features: [{ id: place.id, properties: { selected: true } }],
     });
     expect(mockMapState.instances).toHaveLength(1);
 
-    fixture.componentRef.setInput('selectedPlaceId', DISTANT_PLACE.id);
+    fixture.componentRef.setInput('selectedPlaceId', place.id);
     fixture.detectChanges();
     await fixture.whenStable();
     expect(map.flyTo).toHaveBeenCalledOnce();
     fixture.destroy();
-  });
+    },
+  );
 
   it('focuses the latest selection when it arrives before the map style loads', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
     const map = await waitForMap();
 
-    fixture.componentRef.setInput('city', ROTTERDAM);
     fixture.componentRef.setInput('places', [ROTTERDAM_PLACE]);
     fixture.componentRef.setInput('selectedPlaceId', ROTTERDAM_PLACE.id);
     fixture.detectChanges();
@@ -361,42 +395,40 @@ describe('MapViewportComponent', () => {
     fixture.destroy();
   });
 
-  it('cancels stale selected-place movement during rapid city switches', async () => {
+  it('cancels the previous camera movement when selection changes across cities', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
-    fixture.componentRef.setInput('places', [PLACE]);
-    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
+    fixture.componentRef.setInput('cities', CITIES);
+    fixture.componentRef.setInput('places', [PLACE, ROTTERDAM_PLACE, UTRECHT_PLACE]);
     fixture.detectChanges();
     const map = await waitForMap();
     map.emit('load');
     fixture.detectChanges();
     await fixture.whenStable();
+    map.stop.mockClear();
+    map.flyTo.mockClear();
 
-    fixture.componentRef.setInput('city', ROTTERDAM);
-    fixture.componentRef.setInput('places', []);
-    fixture.componentRef.setInput('selectedPlaceId', null);
+    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
     fixture.detectChanges();
-    fixture.componentRef.setInput('city', {
-      id: 'utrecht',
-      name: 'Utrecht',
-      center: { latitude: 52.09, longitude: 5.12 },
-      defaultZoom: 12.4,
-    } satisfies CityDto);
+    fixture.componentRef.setInput('selectedPlaceId', UTRECHT_PLACE.id);
     fixture.detectChanges();
+    await fixture.whenStable();
 
     expect(mockMapState.instances).toHaveLength(1);
-    expect(map.stop).toHaveBeenCalled();
+    expect(map.stop).toHaveBeenCalledTimes(2);
+    expect(map.flyTo).toHaveBeenCalledTimes(2);
+    expect(map.stop.mock.invocationCallOrder[1]).toBeLessThan(map.flyTo.mock.invocationCallOrder[1]);
     expect(map.flyTo).toHaveBeenLastCalledWith({
-      center: [5.12, 52.09],
-      zoom: 12.4,
-      duration: 650,
+      center: [UTRECHT_PLACE.longitude, UTRECHT_PLACE.latitude],
+      zoom: 14,
+      duration: 450,
+      padding: { top: 0, right: 0, bottom: 0, left: 0 },
     });
     fixture.destroy();
   });
 
   it('stops a pending focus when the selected place is filtered out', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
     const map = await waitForMap();
@@ -423,7 +455,7 @@ describe('MapViewportComponent', () => {
       matches: query === '(prefers-reduced-motion: reduce)',
     })));
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
     const map = await waitForMap();
@@ -448,7 +480,7 @@ describe('MapViewportComponent', () => {
       matches: query === '(max-width: 760px)',
     })));
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
     const mapHost = fixture.nativeElement.querySelector('.map-viewport__canvas') as HTMLElement;
@@ -477,7 +509,7 @@ describe('MapViewportComponent', () => {
 
   it('selects a point and expands a clicked cluster', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
     const component = fixture.componentInstance;
@@ -507,7 +539,7 @@ describe('MapViewportComponent', () => {
 
   it('keeps a loaded map usable after transient errors and a failed cluster expansion', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     fixture.detectChanges();
     const component = fixture.componentInstance;
@@ -553,7 +585,7 @@ describe('MapViewportComponent', () => {
   it('falls back when the critical style never finishes loading and when WebGL is lost', async () => {
     vi.useFakeTimers();
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     const map = await waitForMap();
@@ -569,7 +601,7 @@ describe('MapViewportComponent', () => {
     vi.useRealTimers();
     mockMapState.instances.length = 0;
     const webGlFixture = TestBed.createComponent(MapViewportComponent);
-    webGlFixture.componentRef.setInput('city', CITY);
+    webGlFixture.componentRef.setInput('cities', CITIES);
     webGlFixture.detectChanges();
     const webGlComponent = webGlFixture.componentInstance;
     const webGlMap = await waitForMap();
@@ -585,7 +617,7 @@ describe('MapViewportComponent', () => {
   it('recreates the map on retry and ignores callbacks from the failed generation', async () => {
     vi.useFakeTimers();
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     const failedMap = await waitForMap();
@@ -610,7 +642,7 @@ describe('MapViewportComponent', () => {
 
   it('removes listeners and ignores late map events when destroyed during style loading', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.detectChanges();
     const component = fixture.componentInstance;
     const map = await waitForMap();
@@ -642,7 +674,7 @@ describe('MapViewportComponent', () => {
   it('emits Browse Places from the unavailable-map fallback button', async () => {
     mockMapState.throwOnCreate = true;
     const fixture = TestBed.createComponent(MapViewportComponent);
-    fixture.componentRef.setInput('city', CITY);
+    fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
     const browsePlaces = vi.fn();
     fixture.componentInstance.browsePlaces.subscribe(browsePlaces);

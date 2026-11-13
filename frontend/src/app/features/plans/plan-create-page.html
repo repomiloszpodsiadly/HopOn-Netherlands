@@ -65,7 +65,7 @@
           <span>City</span>
           <select id="plan-city" [value]="currentCityId()" [disabled]="saving() || draftStore.cityConflict() !== null || draftStore.isValidating()" (change)="onCitySelected($event)">
             @for (cityId of cityIds; track cityId) {
-              <option [value]="cityId">{{ cityName(cityId) }}</option>
+              <option [value]="cityId" [selected]="cityId === currentCityId()">{{ cityName(cityId) }}</option>
             }
           </select>
         </label>

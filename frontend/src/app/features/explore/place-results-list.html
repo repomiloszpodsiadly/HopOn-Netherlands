@@ -59,6 +59,7 @@
                 @if (featuredImageAttribution(place) !== null) { Featured place }
                 @else { {{ view.categoryLabels[place.category] }} }
               </span>
+              <span class="place-card__city">{{ cityName(place.cityId) }}</span>
               <span class="place-card__name">{{ place.name }}</span>
               <span class="place-card__description">{{ place.shortDescription }}</span>
               @if (view.discoverPlaceIds.includes(place.id)) {

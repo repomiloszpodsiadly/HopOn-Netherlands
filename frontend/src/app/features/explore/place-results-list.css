@@ -31,6 +31,7 @@
 .place-card__marker svg { width: 19px; }
 .place-card__content { display: grid; gap: 3px; min-width: 0; }
 .place-card__eyebrow { color: var(--color-secondary); font-size: var(--text-caption); font-weight: 750; letter-spacing: .5px; text-transform: uppercase; }
+.place-card__city { color: #687674; font-size: 12px; font-weight: 650; letter-spacing: .2px; }
 .place-card__name { overflow: hidden; color: #2f3e3f; font: 400 17px/1.25 Georgia, serif; text-overflow: ellipsis; }
 .place-card__description { display: -webkit-box; overflow: hidden; color: #586764; font-size: 14px; line-height: 1.42; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .place-card__discover-tag { width: fit-content; margin-top: 2px; padding: 3px 7px; border-radius: 999px; background: #f4e8cc; color: #674c1f; font-size: 12px; font-weight: 700; }

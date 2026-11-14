@@ -2,6 +2,7 @@ package com.hopon.web;
 
 import com.hopon.plans.api.InvalidPlanRequestException;
 import com.hopon.plans.api.PlanNotFoundException;
+import com.hopon.plans.api.PlanLimitReachedException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -43,6 +44,12 @@ public class ApiExceptionHandler {
             InvalidPlanRequestException exception,
             HttpServletRequest request) {
         return problem(HttpStatus.BAD_REQUEST, exception.getMessage(), request);
+    }
+
+    @ExceptionHandler(PlanLimitReachedException.class)
+    public ResponseEntity<ProblemDetail> handlePlanLimit(
+            PlanLimitReachedException exception, HttpServletRequest request) {
+        return problem(HttpStatus.CONFLICT, exception.getMessage(), request);
     }
 
     @ExceptionHandler(PlanNotFoundException.class)

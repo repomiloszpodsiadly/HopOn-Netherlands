@@ -99,6 +99,77 @@ class PlanApiIntegrationTest {
     }
 
     @Test
+    void allocatesNumberedNamesAndBlocksOnlyTheSeventhCreation() throws Exception {
+        List<String> ids = placeIds("amsterdam", 12);
+        PlanResponse first = createPlan("My day out", "amsterdam", List.of());
+        for (int index = 1; index < 6; index++) {
+            assertThat(createPlan("My day out", "amsterdam", List.of()).name()).isEqualTo("My day out-" + index);
+        }
+        mockMvc.perform(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("My day out", "amsterdam", ids)))
+                .andExpect(status().isConflict())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("Use an existing plan or delete one")));
+        mockMvc.perform(put(API_PATH + "/{id}/autosave", UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("My day out", "amsterdam", ids)))
+                .andExpect(status().isConflict());
+        mockMvc.perform(put(API_PATH + "/{id}", first.id()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("Updated full plan", "amsterdam", ids)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.placeIds.length()").value(12));
+        mockMvc.perform(put(API_PATH + "/{id}/autosave", first.id()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("Original retry name", "amsterdam", ids)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("Updated full plan"));
+        assertThat(planRepository.count()).isEqualTo(6);
+        mockMvc.perform(delete(API_PATH + "/{id}", first.id())).andExpect(status().isNoContent());
+        assertThat(createPlan("My day out", "amsterdam", List.of()).name()).isEqualTo("My day out");
+        assertThat(planRepository.count()).isEqualTo(6);
+    }
+
+    @Test
+    void autosaveRetriesKeepOneIdOneAllocatedNameAndOriginalCreationTime() throws Exception {
+        createPlan("My day out", "amsterdam", List.of());
+        UUID id = UUID.randomUUID();
+        List<String> ids = List.of(placeIds("amsterdam", 1).getFirst(), placeIds("rotterdam", 1).getFirst(),
+                placeIds("utrecht", 1).getFirst());
+        MvcResult first = mockMvc.perform(put(API_PATH + "/{id}/autosave", id).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("My day out", "amsterdam", ids.subList(0, 1))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("My day out-1")).andReturn();
+        PlanResponse created = objectMapper.readValue(first.getResponse().getContentAsByteArray(), PlanResponse.class);
+        mockMvc.perform(put(API_PATH + "/{id}/autosave", id).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("My day out", "amsterdam", ids)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.id").value(id.toString()))
+                .andExpect(jsonPath("$.name").value("My day out-1"))
+                .andExpect(jsonPath("$.placeIds.length()").value(3));
+        assertThat(planRepository.count()).isEqualTo(2);
+        assertThat(planRepository.findById(id).orElseThrow().getCreatedAt()).isEqualTo(created.createdAt());
+    }
+
+    @Test
+    void concurrentCreationCannotExceedSixOrAllocateDuplicateNames() throws Exception {
+        try (var executor = java.util.concurrent.Executors.newFixedThreadPool(8)) {
+            var barrier = new java.util.concurrent.CyclicBarrier(8);
+            var futures = java.util.stream.IntStream.range(0, 8).mapToObj(index -> executor.submit(() -> {
+                barrier.await();
+                return mockMvc.perform(put(API_PATH + "/{id}/autosave", UUID.randomUUID())
+                                .contentType(MediaType.APPLICATION_JSON).content(json("My day out", "amsterdam", List.of())))
+                        .andReturn().getResponse().getStatus();
+            })).toList();
+            var statuses = new java.util.ArrayList<Integer>();
+            for (var future : futures) statuses.add(future.get(15, java.util.concurrent.TimeUnit.SECONDS));
+            assertThat(statuses.stream().filter(code -> code == 200).count()).isEqualTo(6);
+            assertThat(statuses.stream().filter(code -> code == 409).count()).isEqualTo(2);
+        }
+        assertThat(planRepository.findAll()).hasSize(6).extracting(PlanEntity::getName)
+                .containsExactlyInAnyOrder("My day out", "My day out-1", "My day out-2", "My day out-3", "My day out-4", "My day out-5");
+    }
+
+    @Test
+    void numberedNamesStayWithinThirtyCharacters() throws Exception {
+        createPlan("x".repeat(30), "amsterdam", List.of());
+        assertThat(createPlan("x".repeat(30), "amsterdam", List.of()).name()).isEqualTo("x".repeat(28) + "-1");
+    }
+
+    @Test
     void allowsThePlaywrightAngularOriginToCreatePlans() throws Exception {
         String browserOrigin = "http://127.0.0.1:4300";
         mockMvc.perform(post(API_PATH)
@@ -198,32 +269,50 @@ class PlanApiIntegrationTest {
     }
 
     @Test
-    void acceptsOneAndTwelvePlacesButRejectsZeroAndThirteen() throws Exception {
+    void acceptsZeroOneAndTwelvePlacesButRejectsThirteen() throws Exception {
         List<String> cityPlaceIds = placeIds("amsterdam", 13);
 
         assertThat(createPlan("One place", "amsterdam", cityPlaceIds.subList(0, 1)).placeIds()).hasSize(1);
-        assertThat(createPlan("Twelve places", "amsterdam", cityPlaceIds.subList(0, 12)).placeIds()).hasSize(12);
-        expectProblem(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
-                .content(json("No places", "amsterdam", List.of())), 400);
+        PlanResponse full = createPlan("Twelve places", "amsterdam", cityPlaceIds.subList(0, 12));
+        assertThat(full.placeIds()).hasSize(12);
+        expectProblem(put(API_PATH + "/{id}", full.id()).contentType(MediaType.APPLICATION_JSON)
+                .content(json(full.name(), "amsterdam", cityPlaceIds)), 400);
+        mockMvc.perform(get(API_PATH + "/{id}", full.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.placeIds.length()").value(12));
+        PlanResponse empty = createPlan("Places to come", "amsterdam", List.of());
+        assertThat(empty.placeIds()).isEmpty();
+        mockMvc.perform(get(API_PATH + "/{id}", empty.id()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.placeIds").isEmpty());
+        PlanResponse withPlace = updatePlan(empty.id(), empty.name(), empty.cityId(), cityPlaceIds.subList(0, 1));
+        assertThat(withPlace.placeIds()).hasSize(1);
+        PlanResponse cleared = updatePlan(empty.id(), empty.name(), empty.cityId(), List.of());
+        assertThat(cleared.placeIds()).isEmpty();
         expectProblem(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
                 .content(json("Too many places", "amsterdam", cityPlaceIds)), 400);
     }
 
     @Test
-    void validatesNameCityAndCatalogIdentityWithoutDeduplicatingOrMixingCities() throws Exception {
+    void validatesNameCityAndCatalogIdentityWhileAllowingPlacesAcrossCities() throws Exception {
         List<String> amsterdamIds = placeIds("amsterdam", 2);
         String rotterdamId = placeIds("rotterdam", 1).getFirst();
+        String utrechtId = placeIds("utrecht", 1).getFirst();
 
         expectInvalid("   ", "amsterdam", amsterdamIds);
-        expectInvalid("x".repeat(81), "amsterdam", amsterdamIds);
+        expectInvalid("x".repeat(31), "amsterdam", amsterdamIds);
         expectInvalid("A plan", "unknown-city", amsterdamIds);
         expectInvalid("A plan", "amsterdam", List.of("   "));
         expectInvalid("A plan", "amsterdam", List.of(amsterdamIds.getFirst(), amsterdamIds.getFirst()));
         expectInvalid("A plan", "amsterdam", List.of("unknown-catalog-place"));
-        expectInvalid("A plan", "amsterdam", List.of(rotterdamId));
+        List<String> mixedPlaces = List.of(amsterdamIds.getFirst(), rotterdamId, utrechtId);
+        PlanResponse mixedCityPlan = createPlan("Three city day", "amsterdam", mixedPlaces);
+        assertThat(mixedCityPlan.placeIds()).containsExactlyElementsOf(mixedPlaces);
+        assertThat(updatePlan(mixedCityPlan.id(), mixedCityPlan.name(), "utrecht", mixedPlaces).placeIds())
+                .containsExactlyElementsOf(mixedPlaces);
 
-        assertThat(createPlan("x".repeat(80), "amsterdam", amsterdamIds.subList(0, 1)).name())
-                .hasSize(80);
+        assertThat(createPlan("x".repeat(30), "amsterdam", amsterdamIds.subList(0, 1)).name())
+                .hasSize(30);
     }
 
     @Test
@@ -283,6 +372,79 @@ class PlanApiIntegrationTest {
         return objectMapper.readValue(result.getResponse().getContentAsByteArray(), PlanResponse.class);
     }
 
+    @Test
+    void persistsUpdatesAndClearsMultilineDescriptionsWithoutChangingOtherPlanFields() throws Exception {
+        String description = "Canals & cafés.\nMeet at 10:00 <near the bridge>.";
+        MvcResult result = mockMvc.perform(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("A city day", "  " + description + "  ", "amsterdam", List.of())))
+                .andExpect(status().isCreated()).andReturn();
+        PlanResponse created = objectMapper.readValue(result.getResponse().getContentAsByteArray(), PlanResponse.class);
+        assertThat(created.description()).isEqualTo(description);
+        mockMvc.perform(get(API_PATH + "/{id}", created.id()))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.description").value(description));
+
+        String updatedDescription = "Museums first.\nLunch by the water.";
+        MvcResult updatedResult = mockMvc.perform(put(API_PATH + "/{id}", created.id()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(created.name(), updatedDescription, created.cityId(), created.placeIds())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.description").value(updatedDescription)).andReturn();
+        PlanResponse updated = objectMapper.readValue(updatedResult.getResponse().getContentAsByteArray(), PlanResponse.class);
+        assertThat(updated.createdAt()).isEqualTo(created.createdAt());
+        assertThat(updated.updatedAt()).isAfter(created.updatedAt());
+        mockMvc.perform(get(API_PATH)).andExpect(jsonPath("$[0].description").value(updatedDescription));
+        mockMvc.perform(put(API_PATH + "/{id}", created.id()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(created.name(), "  " + updatedDescription + "  ", created.cityId(), created.placeIds())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.updatedAt").value(updated.updatedAt().toString()));
+        mockMvc.perform(put(API_PATH + "/{id}", created.id()).contentType(MediaType.APPLICATION_JSON)
+                        .content(json(created.name(), null, created.cityId(), created.placeIds())))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.description").value(""))
+                .andExpect(jsonPath("$.name").value(created.name())).andExpect(jsonPath("$.placeIds").isEmpty());
+        mockMvc.perform(get(API_PATH + "/{id}", created.id())).andExpect(jsonPath("$.description").value(""));
+    }
+
+    @Test
+    void acceptsTheDescriptionBoundaryAndRejectsOversizedDescriptionsWithoutMutatingThePlan() throws Exception {
+        String description = "x".repeat(500);
+        MvcResult result = mockMvc.perform(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("A city day", description, "utrecht", List.of())))
+                .andExpect(status().isCreated()).andReturn();
+        PlanResponse created = objectMapper.readValue(result.getResponse().getContentAsByteArray(), PlanResponse.class);
+        assertThat(created.description()).isEqualTo(description);
+        expectProblem(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
+                .content(json("Too long", description + "x", "utrecht", List.of())), 400);
+        expectProblem(put(API_PATH + "/{id}", created.id()).contentType(MediaType.APPLICATION_JSON)
+                .content(json("Changed name", description + "x", "utrecht", List.of())), 400);
+        mockMvc.perform(get(API_PATH + "/{id}", created.id()))
+                .andExpect(jsonPath("$.name").value(created.name()))
+                .andExpect(jsonPath("$.description").value(description))
+                .andExpect(jsonPath("$.updatedAt").value(created.updatedAt().toString()));
+        assertThat(planRepository.count()).isEqualTo(1);
+    }
+
+    @Test
+    void treatsAnOmittedDescriptionAsEmptyForExistingApiClients() throws Exception {
+        mockMvc.perform(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\":\"A city day\",\"cityId\":\"amsterdam\",\"placeIds\":[]}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.description").value(""));
+    }
+
+    @Test
+    void enforcesThirtyCharacterNamesAndFiveHundredCharacterDescriptionsOnAutosaveAndUpdate() throws Exception {
+        UUID id = UUID.randomUUID();
+        List<String> ids = placeIds("amsterdam", 1);
+        mockMvc.perform(put(API_PATH + "/{id}/autosave", id).contentType(MediaType.APPLICATION_JSON)
+                        .content(json("n".repeat(30), "d".repeat(500), "amsterdam", ids)))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.name").value("n".repeat(30)))
+                .andExpect(jsonPath("$.description").value("d".repeat(500)));
+        expectProblem(put(API_PATH + "/{id}", id).contentType(MediaType.APPLICATION_JSON)
+                .content(json("n".repeat(31), "", "amsterdam", ids)), 400);
+        expectProblem(put(API_PATH + "/{id}/autosave", id).contentType(MediaType.APPLICATION_JSON)
+                .content(json("n".repeat(30), "d".repeat(501), "amsterdam", ids)), 400);
+        expectProblem(put(API_PATH + "/{id}/autosave", UUID.randomUUID()).contentType(MediaType.APPLICATION_JSON)
+                .content(json("n".repeat(31), "", "amsterdam", ids)), 400);
+        mockMvc.perform(get(API_PATH + "/{id}", id)).andExpect(jsonPath("$.description").value("d".repeat(500)));
+        assertThat(planRepository.count()).isEqualTo(1);
+    }
+
     private void expectInvalid(String name, String cityId, List<String> placeIds) throws Exception {
         expectProblem(post(API_PATH).contentType(MediaType.APPLICATION_JSON)
                 .content(json(name, cityId, placeIds)), 400);
@@ -301,7 +463,11 @@ class PlanApiIntegrationTest {
     }
 
     private String json(String name, String cityId, List<String> placeIds) throws Exception {
-        return objectMapper.writeValueAsString(new PlanUpsertRequest(name, cityId, placeIds));
+        return json(name, null, cityId, placeIds);
+    }
+
+    private String json(String name, String description, String cityId, List<String> placeIds) throws Exception {
+        return objectMapper.writeValueAsString(new PlanUpsertRequest(name, description, cityId, placeIds));
     }
 
     private List<String> placeIds(String cityId, int count) {
@@ -313,6 +479,6 @@ class PlanApiIntegrationTest {
     }
 
     private static PlanEntity plan(UUID id, String name, List<String> placeIds, Instant updatedAt) {
-        return new PlanEntity(id, name, "utrecht", placeIds, updatedAt, updatedAt);
+        return new PlanEntity(id, name, "", "utrecht", placeIds, updatedAt, updatedAt);
     }
 }

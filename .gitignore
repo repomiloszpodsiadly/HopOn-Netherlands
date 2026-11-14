@@ -1,5 +1,7 @@
 .idea/
 prompts/
+.tools/runtime/
+/debug.log
 .tools/angular-scaffold/
 .tools/gradle-9.8.2/
 .tools/gradle-9.8.2-bin.zip

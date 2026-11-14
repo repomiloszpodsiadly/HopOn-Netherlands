@@ -28,6 +28,7 @@
       <div class="place-card-entry" [class.place-card-entry--featured]="featuredImageAttribution(place) !== null">
         <button
           class="place-card"
+          appPointerLight
           [class.place-card--selected]="view.selectedPlaceId === place.id"
           [class.place-card--discover]="view.discoverPlaceIds.includes(place.id)"
           [class.place-card--featured]="featuredImageAttribution(place) !== null"
@@ -36,11 +37,12 @@
           (click)="placeSelected.emit({ placeId: place.id, trigger: $event.currentTarget })"
         >
           @if (featuredImageAttribution(place); as attribution) {
+            <span class="place-card__media">
             <img
               class="place-card__image"
               [src]="attribution.imagePath"
               [srcset]="featuredImageSrcSet(attribution)"
-              sizes="(max-width: 760px) calc(100vw - 34px), (max-width: 1100px) 34vw, 348px"
+              sizes="(max-width: 760px) 96px, 144px"
               [style.object-position]="attribution.objectPosition"
               width="1280"
               height="960"
@@ -49,10 +51,11 @@
               decoding="async"
               (error)="onFeaturedImageError(place.id)"
             />
+            </span>
           }
           <span class="place-card__body">
-            <span class="place-card__marker" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.7"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.7"/></svg>
+            <span class="place-card__marker" [attr.data-category]="place.category" aria-hidden="true">
+              <app-category-icon [category]="place.category" />
             </span>
             <span class="place-card__content">
               <span class="place-card__eyebrow">
@@ -72,14 +75,20 @@
               </span>
             </span>
           </span>
+          <span class="place-card__arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
         </button>
         @if (featuredImageAttribution(place); as attribution) {
-          <p class="place-card__credit">
+          <details class="place-card__credit">
+            <summary aria-label="Photo credits">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M12 11v6m0-10v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            </summary>
+            <div>
             <span>Photo by <a [href]="attribution.sourcePageUrl" target="_blank" rel="noopener noreferrer">{{ attribution.author }}</a></span>
             <span aria-hidden="true">|</span>
             <a [href]="attribution.licenseUrl" target="_blank" rel="noopener noreferrer">{{ attribution.licenseLabel }}</a>
             <span class="place-card__changes">{{ attribution.changeNotice }}</span>
-          </p>
+            </div>
+          </details>
         }
       </div>
     }

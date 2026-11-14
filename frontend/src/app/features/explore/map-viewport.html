@@ -24,7 +24,11 @@
       <p>The city guide is still available. Check your connection or browse the place list.</p>
       <div class="map-viewport__fallback-actions">
         <button type="button" class="button button--primary" (click)="retry()">Retry map</button>
-        <button type="button" class="button button--secondary" (click)="browsePlaces.emit()">Browse places</button>
+      </div>
+      <div class="map-viewport__attribution">
+        <a href="https://openfreemap.org/" target="_blank" rel="noopener noreferrer">OpenFreeMap</a>
+        · © <a href="https://openmaptiles.org/" target="_blank" rel="noopener noreferrer">OpenMapTiles</a>
+        · © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener noreferrer">OpenStreetMap contributors</a>
       </div>
     </div>
   }

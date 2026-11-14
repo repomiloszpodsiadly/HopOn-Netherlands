@@ -1,5 +1,7 @@
 import { ChangeDetectionStrategy, Component, EventEmitter, Input, Output, signal } from '@angular/core';
 import type { CityId, PlaceCategory, PlaceDto } from '../../core/models/catalog.models';
+import { CategoryIconComponent } from '../shared/category-icon';
+import { PointerLightDirective } from '../shared/pointer-light';
 import { getFeaturedPlaceImage, getPlaceImageAttribution, type PlaceImageAttribution } from './place-image-attribution';
 
 const CITY_LABELS: Readonly<Record<CityId, string>> = {
@@ -29,6 +31,7 @@ export type PlaceSelectionRequest = Readonly<{
 
 @Component({
   selector: 'app-place-results-list',
+  imports: [CategoryIconComponent, PointerLightDirective],
   templateUrl: './place-results-list.html',
   styleUrl: './place-results-list.css',
   changeDetection: ChangeDetectionStrategy.OnPush,

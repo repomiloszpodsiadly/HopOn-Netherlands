@@ -6,6 +6,7 @@ import { TestBed } from '@angular/core/testing';
 import { PlaceDto } from '../../core/models/catalog.models';
 import { PlanResponse } from '../../core/models/plan.models';
 import { DRAFT_PLAN_STORAGE_KEY } from '../../core/services/draft-plan.store';
+import { ACTIVE_PLAN_STORAGE_KEY } from '../../core/services/active-plan.store';
 import { routes } from '../../app.routes';
 import { PlanDetailsPage } from './plan-details-page';
 import { PlansRouteReuseStrategy } from '../../plans-route-reuse.strategy';
@@ -57,6 +58,7 @@ const PLACES: readonly PlaceDto[] = [
 const SAVED_PLAN: PlanResponse = {
   id: PLAN_ID,
   name: 'Museum afternoon',
+  description: '',
   cityId: 'amsterdam',
   placeIds: [FIRST_PLACE_ID, SECOND_PLACE_ID],
   createdAt: '2026-11-08T10:00:00Z',
@@ -95,6 +97,7 @@ function dispatchBeforeUnload(): Event {
 
 describe('PlanDetailsPage', () => {
   beforeEach(() => {
+    sessionStorage.removeItem(ACTIVE_PLAN_STORAGE_KEY);
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -106,6 +109,7 @@ describe('PlanDetailsPage', () => {
   });
 
   afterEach(() => {
+    sessionStorage.removeItem(ACTIVE_PLAN_STORAGE_KEY);
     TestBed.inject(HttpTestingController).verify({ ignoreCancelled: true });
     sessionStorage.removeItem(DRAFT_PLAN_STORAGE_KEY);
   });
@@ -125,10 +129,13 @@ describe('PlanDetailsPage', () => {
     } else {
       request.flush(plan);
       await harness.fixture.whenStable();
-      const catalog = http.expectOne(
-        (candidate) => candidate.url === '/api/places' && candidate.params.get('cityId') === plan.cityId,
-      );
-      catalog.flush(PLACES.filter((place) => place.cityId === plan.cityId));
+      const catalogs = http.match((candidate) => candidate.url === '/api/places');
+      expect(catalogs).toHaveLength(3);
+      catalogs.forEach((catalog) => {
+        const cityId = catalog.request.params.get('cityId');
+        expect(cityId).toBeTruthy();
+        catalog.flush(PLACES.filter((place) => place.cityId === cityId));
+      });
       await harness.fixture.whenStable();
       harness.detectChanges();
     }
@@ -138,6 +145,45 @@ describe('PlanDetailsPage', () => {
       component: harness.routeDebugElement!.componentInstance as PlanDetailsPage,
     };
   }
+
+  it('opens the map for this saved plan without saving or changing the tab draft', async () => {
+    const draft = storeSeparateDraft();
+    const { harness, http } = await startPage();
+    const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(false);
+    const button = harness.routeNativeElement?.querySelector<HTMLButtonElement>('.details-stops .details-explore-map');
+    const usePlan = harness.routeNativeElement?.querySelector<HTMLButtonElement>('.details-use-plan');
+
+    expect(button?.disabled).toBe(false);
+    expect(usePlan?.textContent?.trim()).toBe('Use this plan');
+    usePlan?.click();
+    await harness.fixture.whenStable();
+
+    expect(navigate).toHaveBeenCalledWith(['/'], {
+      queryParams: { plan: PLAN_ID },
+      fragment: 'map-region',
+    });
+    expect(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY)).toBe(draft);
+    http.expectNone(`/api/plans/${PLAN_ID}`);
+  });
+
+  it('asks before leaving unsaved edits for the map and preserves them when cancelled', async () => {
+    const { harness, component, http } = await startPage();
+    component.name.set('A title still being edited');
+    harness.detectChanges();
+    const button = harness.routeNativeElement?.querySelector<HTMLButtonElement>('.details-explore-map');
+    expect(button?.disabled).toBe(false);
+    button?.click();
+    const dialog = await waitForDialog(harness, 'discard-plan-edits');
+    expect(dialog?.hasAttribute('open')).toBe(true);
+
+    dialog?.querySelector<HTMLButtonElement>('.confirm-dialog__button--quiet')?.click();
+    await harness.fixture.whenStable();
+
+    expect(TestBed.inject(Router).url).toBe(`/plans/${PLAN_ID}`);
+    expect(component.name()).toBe('A title still being edited');
+    expect(component.dirty()).toBe(true);
+    http.expectNone(`/api/plans/${PLAN_ID}`);
+  });
 
   it('loads authoritative details with real catalog metadata without touching the tab draft', async () => {
     const draft = storeSeparateDraft();
@@ -181,10 +227,13 @@ describe('PlanDetailsPage', () => {
     (harness.routeNativeElement?.querySelector('button[type="submit"]') as HTMLButtonElement).click();
     const request = http.expectOne(`/api/plans/${PLAN_ID}`);
     expect(request.request.method).toBe('PUT');
+    harness.detectChanges();
+    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('.details-explore-map')?.disabled).toBe(true);
     await harness.fixture.whenStable();
     expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
     expect(request.request.body).toEqual({
       name: 'A reordered Amsterdam day',
+      description: '',
       cityId: 'amsterdam',
       placeIds: [SECOND_PLACE_ID, FIRST_PLACE_ID, THIRD_PLACE_ID],
     });
@@ -198,6 +247,7 @@ describe('PlanDetailsPage', () => {
     harness.detectChanges();
 
     expect(component.dirty()).toBe(false);
+    expect(harness.routeNativeElement?.querySelector<HTMLButtonElement>('.details-explore-map')?.disabled).toBe(false);
     expect(component.plan()?.updatedAt).toBe('2026-11-10T12:00:00Z');
     expect(component.saveNotice()).toBe('Your changes are saved.');
     expect(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY)).toBe(draft);
@@ -224,6 +274,34 @@ describe('PlanDetailsPage', () => {
     expect(component.dirty()).toBe(true);
     expect(harness.routeNativeElement?.querySelector('[role="alert"]')?.textContent)
       .toContain('Plan name is invalid.');
+  });
+
+  it('tracks description-only edits, preserves failed changes and allows clearing the description', async () => {
+    const { harness, component, http } = await startPage();
+    const description = 'Canals & cafés.\nAn afternoon together.';
+    component.onDescriptionInput({ target: { value: description } } as unknown as Event);
+    await harness.fixture.whenStable();
+    expect(component.dirty()).toBe(true);
+    expect(dispatchBeforeUnload().defaultPrevented).toBe(true);
+    component.save();
+    const failed = http.expectOne(`/api/plans/${PLAN_ID}`);
+    expect(failed.request.body.description).toBe(description);
+    failed.flush({ detail: 'Try again.' }, { status: 500, statusText: 'Server Error' });
+    await harness.fixture.whenStable();
+    expect(component.description()).toBe(description);
+    expect(component.dirty()).toBe(true);
+    component.save();
+    http.expectOne(`/api/plans/${PLAN_ID}`).flush({ ...SAVED_PLAN, description });
+    await harness.fixture.whenStable();
+    expect(component.dirty()).toBe(false);
+    component.onDescriptionInput({ target: { value: '' } } as unknown as Event);
+    component.save();
+    const cleared = http.expectOne(`/api/plans/${PLAN_ID}`);
+    expect(cleared.request.body.description).toBe('');
+    cleared.flush(SAVED_PLAN);
+    await harness.fixture.whenStable();
+    expect(component.dirty()).toBe(false);
+    expect(component.description()).toBe('');
   });
 
   it('shows a not-found state with a route back to the server list after a 404 read', async () => {

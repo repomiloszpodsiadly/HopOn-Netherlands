@@ -11,6 +11,7 @@ import {
   signal,
 } from '@angular/core';
 import { PlaceDto } from '../../core/models/catalog.models';
+import { PointerLightDirective } from '../shared/pointer-light';
 import { NearbyHub, formatApproximateDistance } from './nearby-hubs';
 import { getPlaceImageAttribution, type PlaceImageAttribution } from './place-image-attribution';
 
@@ -21,6 +22,7 @@ export type AddPlaceEvent = Readonly<{
 
 @Component({
   selector: 'app-place-detail',
+  imports: [PointerLightDirective],
   templateUrl: './place-detail.html',
   styleUrl: './place-detail.css',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -35,6 +37,9 @@ export class PlaceDetailComponent implements OnChanges {
   @Input() hubsError: string | null = null;
   @Input() hubCatalogLoaded = false;
   @Input() draftContainsPlace = false;
+  @Input() planFull = false;
+  @Input() addDisabled = false;
+  @Input() addActionLabel = 'Add to plan';
   @Output() readonly closed = new EventEmitter<void>();
   @Output() readonly addPlace = new EventEmitter<AddPlaceEvent>();
   @Output() readonly retryHubs = new EventEmitter<void>();

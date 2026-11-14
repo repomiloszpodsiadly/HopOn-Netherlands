@@ -25,61 +25,84 @@ describe('DraftPlanStore', () => {
 
   afterEach(() => sessionStorage.removeItem(DRAFT_PLAN_STORAGE_KEY));
 
-  it('adds only verified current-city IDs, preserves order, and deduplicates repeated adds', () => {
+  it('adds verified IDs from different cities, preserves order, and deduplicates repeated adds', () => {
     const store = TestBed.inject(DraftPlanStore);
     const catalog = [place('first'), place('second')];
 
-    expect(store.addPlaces('amsterdam', 'Amsterdam', ['first', 'first', 'unknown'], catalog))
+    expect(store.addPlaces(['first', 'first', 'unknown'], catalog))
       .toEqual({ status: 'added', addedCount: 1, alreadyPresentCount: 0 });
-    expect(store.addPlaces('amsterdam', 'Amsterdam', ['first'], catalog))
+    expect(store.addPlaces(['first'], catalog))
       .toEqual({ status: 'already-added' });
-    expect(store.addPlaces('amsterdam', 'Amsterdam', ['first', 'second'], catalog))
+    expect(store.addPlaces(['first', 'second'], catalog))
       .toEqual({ status: 'added', addedCount: 1, alreadyPresentCount: 1 });
 
-    expect(store.draft()?.placeIds).toEqual(['first', 'second']);
+    const rotterdamPlace = place('rotterdam-stop', 'rotterdam');
+    expect(store.addPlaces([rotterdamPlace.id], [...catalog, rotterdamPlace]))
+      .toEqual({ status: 'added', addedCount: 1, alreadyPresentCount: 0 });
+
+    expect(store.draft()?.placeIds).toEqual(['first', 'second', 'rotterdam-stop']);
     expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}')).toMatchObject({
       schemaVersion: 1,
       cityId: 'amsterdam',
-      name: 'Amsterdam plan',
-      placeIds: ['first', 'second'],
+      name: 'My day out',
+      placeIds: ['first', 'second', 'rotterdam-stop'],
     });
     expect(store.draft()?.updatedAt).toMatch(/^\d{4}-\d\d-\d\dT/);
   });
 
-  it('keeps temporary drafts above the 12-place save limit intact', () => {
+  it('accepts twelve places and rejects an extra place or oversized batch without changing the draft', () => {
     const store = TestBed.inject(DraftPlanStore);
     const catalog = Array.from({ length: 13 }, (_, index) => place(`place-${index}`));
     const placeIds = catalog.map(({ id }) => id);
 
-    expect(store.addPlaces('amsterdam', 'Amsterdam', placeIds, catalog))
-      .toEqual({ status: 'added', addedCount: 13, alreadyPresentCount: 0 });
-    expect(store.draft()?.placeIds).toEqual(placeIds);
+    expect(store.addPlaces(placeIds, catalog))
+      .toEqual({ status: 'limit-reached' });
+    expect(store.draft()).toBeNull();
+    expect(store.addPlaces(placeIds.slice(0, 12), catalog))
+      .toEqual({ status: 'added', addedCount: 12, alreadyPresentCount: 0 });
+    const before = store.draft();
+    expect(store.addPlaces([placeIds[12]], catalog))
+      .toEqual({ status: 'limit-reached' });
+    expect(store.draft()).toBe(before);
     expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}').placeIds)
-      .toEqual(placeIds);
+      .toEqual(placeIds.slice(0, 12));
   });
 
-  it('requires an explicit keep or replace decision before crossing cities', () => {
+  it('keeps cross-city places together and preserves the plan starting city', () => {
     const store = TestBed.inject(DraftPlanStore);
-    store.addPlaces('amsterdam', 'Amsterdam', ['a1'], [place('a1')]);
+    store.addPlaces(['a1'], [place('a1')]);
 
-    expect(store.addPlaces('rotterdam', 'Rotterdam', ['r1'], [place('r1', 'rotterdam')]))
-      .toEqual({ status: 'city-conflict' });
-    expect(store.draft()?.cityId).toBe('amsterdam');
-    expect(store.cityConflict()).toMatchObject({ cityId: 'rotterdam', placeIds: ['r1'] });
-    store.keepExistingDraft();
-    expect(store.draft()?.placeIds).toEqual(['a1']);
+    expect(store.addPlaces(['r1'], [place('r1', 'rotterdam')]))
+      .toEqual({ status: 'added', addedCount: 1, alreadyPresentCount: 0 });
+    expect(store.draft()).toMatchObject({ cityId: 'amsterdam', name: 'My day out', placeIds: ['a1', 'r1'] });
+    expect(store.requestCityChange('utrecht')).toBe(true);
+    expect(store.draft()).toMatchObject({ cityId: 'utrecht', placeIds: ['a1', 'r1'] });
+  });
 
-    store.addPlaces('rotterdam', 'Rotterdam', ['r1'], [place('r1', 'rotterdam')]);
-    expect(store.startDraftForRequestedCity()).toBe(true);
-    expect(store.draft()).toMatchObject({ cityId: 'rotterdam', placeIds: ['r1'] });
+  it('changes an empty draft city without a conflict and keeps its custom name', () => {
+    const store = TestBed.inject(DraftPlanStore);
+    store.initializeDraft('amsterdam');
+    store.renameDraft('A quiet afternoon');
+    store.updateDescription('A walk by the canals.\nCoffee afterwards.');
+
+    for (const cityId of ['rotterdam', 'utrecht', 'amsterdam'] as const) {
+      expect(store.requestCityChange(cityId)).toBe(true);
+      expect(store.draft()).toMatchObject({ cityId, name: 'A quiet afternoon', placeIds: [] });
+      expect(store.draft()?.description).toBe('A walk by the canals.\nCoffee afterwards.');
+      expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}'))
+        .toMatchObject({ cityId, name: 'A quiet afternoon', placeIds: [] });
+      expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}').description)
+        .toBe('A walk by the canals.\nCoffee afterwards.');
+    }
   });
 
   it('persists empty drafts, renames, ordered edits, and guards successful-save cleanup', () => {
     const store = TestBed.inject(DraftPlanStore);
-    expect(store.initializeDraft('amsterdam', 'Amsterdam')).toBe(true);
+    expect(store.initializeDraft('amsterdam')).toBe(true);
+    expect(store.draft()?.name).toBe('My day out');
     expect(store.draft()?.placeIds).toEqual([]);
 
-    store.addPlaces('amsterdam', 'Amsterdam', ['first', 'second'], [place('first'), place('second')]);
+    store.addPlaces(['first', 'second'], [place('first'), place('second')]);
     expect(store.renameDraft('')).toBe(true);
     expect(store.movePlace('second', 'up')).toBe(true);
     expect(store.draft()?.placeIds).toEqual(['second', 'first']);
@@ -117,7 +140,7 @@ describe('DraftPlanStore', () => {
       schemaVersion: 1,
       cityId: 'amsterdam',
       name: 'Walk',
-      placeIds: ['known', 'stale', 'known'],
+      placeIds: ['known', 'rotterdam-known', 'stale', 'known'],
       updatedAt: '2026-10-01T10:00:00.000Z',
     }));
     const store = TestBed.inject(DraftPlanStore);
@@ -125,11 +148,23 @@ describe('DraftPlanStore', () => {
     expect(store.isValidating()).toBe(true);
     expect(store.draft()).toBeNull();
     expect(store.pendingCityId()).toBe('amsterdam');
-    expect(store.validatePendingDraft('amsterdam', [place('known')])).toBe(true);
+    expect(store.validatePendingDraft('amsterdam', [place('known'), place('rotterdam-known', 'rotterdam')])).toBe(true);
     expect(store.isValidating()).toBe(false);
-    expect(store.draft()?.placeIds).toEqual(['known']);
+    expect(store.draft()?.placeIds).toEqual(['known', 'rotterdam-known']);
+    expect(store.draft()?.description).toBe('');
     expect(store.restoreMessage()).toContain('removed from this tab draft');
-    expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}').placeIds).toEqual(['known']);
+    expect(JSON.parse(sessionStorage.getItem(DRAFT_PLAN_STORAGE_KEY) ?? '{}').placeIds).toEqual(['known', 'rotterdam-known']);
+  });
+
+  it('restores multiline descriptions without changing the saved text', () => {
+    sessionStorage.setItem(DRAFT_PLAN_STORAGE_KEY, JSON.stringify({
+      schemaVersion: 1, cityId: 'amsterdam', name: 'My day', description: 'Canals & cafés.\nMeet at 10:00.',
+      placeIds: [], updatedAt: '2026-11-14T10:00:00Z',
+    }));
+    const store = TestBed.inject(DraftPlanStore);
+    expect(store.validatePendingDraft('amsterdam', [])).toBe(true);
+    expect(store.draft()?.description).toBe('Canals & cafés.\nMeet at 10:00.');
+    expect(store.updateDescription('Canals & cafés.\nMeet at 10:00.')).toBe(false);
   });
 
   it('clears a corrupt or unsupported draft without throwing', () => {
@@ -172,7 +207,7 @@ describe('DraftPlanStore', () => {
     expect(store.draft()).toBeNull();
     expect(store.pendingCityId()).toBe('utrecht');
     expect(store.validationError()).toBe('Catalog unavailable');
-    expect(store.addPlaces('amsterdam', 'Amsterdam', ['a1'], [place('a1')]))
+    expect(store.addPlaces(['a1'], [place('a1')]))
       .toEqual({ status: 'validation-pending' });
   });
 });

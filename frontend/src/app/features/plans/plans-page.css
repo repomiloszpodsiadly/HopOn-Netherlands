@@ -26,43 +26,6 @@
   text-decoration: none;
 }
 
-.brand__symbol {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 12px 12px 12px 4px;
-  background: var(--color-primary);
-  transform: rotate(-7deg);
-}
-
-.brand__symbol span {
-  position: relative;
-  width: 10px;
-  height: 10px;
-  border: 2px solid #fff;
-  border-radius: 50%;
-}
-
-.brand__symbol span::after {
-  position: absolute;
-  inset: 1px;
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #fff;
-  content: '';
-}
-
-.brand__wordmark {
-  font-size: 24px;
-  font-weight: 750;
-  letter-spacing: -1.2px;
-}
-
-.brand__wordmark span {
-  color: var(--color-primary);
-}
 
 .plans-topbar__note {
   color: var(--color-muted);
@@ -129,9 +92,10 @@
 }
 
 .plans-button--primary {
-  background: var(--color-ink);
-  color: #fff;
+  background: var(--color-action);
+  color: var(--color-action-ink);
 }
+.plans-button--primary:hover { background: var(--color-action-hover); }
 
 .plans-button--secondary {
   border-color: var(--color-border);

@@ -10,11 +10,20 @@
   <main class="workspace">
     <div class="explore-sidebar">
     <section class="discovery" aria-labelledby="welcome-title">
-      <div class="eyebrow"><span class="eyebrow__line" aria-hidden="true"></span>A little more local</div>
-      <h1 id="welcome-title">Find your own<br /><em>way around.</em></h1>
-      <p class="intro">Local places and small discoveries across three Dutch cities.</p>
+      <div class="discovery__brand-row">
+        <a class="hopon-brand" routerLink="/" aria-label="HopOn Netherlands home">
+          <img src="/assets/brand/hopon-tulip.svg" width="32" height="38" alt="" />
+          <span>HopOn<small>Netherlands</small></span>
+        </a>
+        <a class="saved-plans-link" appPointerLight routerLink="/plans">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4h12v17l-6-4-6 4V4Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+          Saved plans <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
+        </a>
+      </div>
+      <h1 id="welcome-title">Discover <em>places</em></h1>
+      <p class="intro">Local places. Personal plans.</p>
 
-      <label class="search-box" for="place-search">
+      <label class="search-box" appPointerLight for="place-search">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.5" stroke="currentColor" stroke-width="1.7"/><path d="m16 16 4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         <input
           id="place-search"
@@ -35,26 +44,24 @@
     </section>
 
     <section class="category-panel" aria-labelledby="category-title">
-      <div class="section-heading">
-        <h2 id="category-title">Explore by type</h2>
-        <span>REAL PLACES</span>
+      <div class="category-panel__heading">
+        <h2 id="category-title">Categories</h2>
       </div>
       <div class="filter-row" role="group" aria-label="Filter places by category">
         @for (category of categoryOptions; track category.label) {
           <button
             class="filter-chip"
+            appPointerLight
             [class.filter-chip--selected]="activeCategory() === category.value"
             [attr.aria-pressed]="activeCategory() === category.value"
             type="button"
             (click)="selectCategory(category.value)"
           >
-            {{ category.label }}
+            <span class="filter-chip__icon"><app-category-icon [category]="category.value" /></span>
+            <span>{{ category.label }}</span>
           </button>
         }
       </div>
-      @if (hasActiveFilters()) {
-        <button class="clear-filters" type="button" (click)="clearFilters()">Clear filters</button>
-      }
     </section>
 
     <section class="discover-panel" aria-labelledby="discover-title">
@@ -121,7 +128,7 @@
                     }
                   }
                 </ul>
-                <button class="button button--secondary discover-add" type="button" (click)="addDiscoverSelection(group.cityId, $event.currentTarget)">
+                <button class="button button--secondary discover-add" type="button" (click)="addDiscoverSelection(group.cityId)">
                   Add {{ cityName(group.cityId) }} picks to plan
                 </button>
               }
@@ -132,10 +139,9 @@
     </section>
 
 
-    <section class="place-results" #placeResults aria-labelledby="places-title" tabindex="-1">
+    <section class="place-results" aria-labelledby="places-title" tabindex="-1">
       <div class="place-results__heading">
         <div>
-          <p class="eyebrow eyebrow--small">THREE CITIES &#183; ONE GUIDE</p>
           <h2 id="places-title">Places to explore</h2>
         </div>
         @if (placesLoading()) {
@@ -184,14 +190,6 @@
       tabindex="-1"
       aria-label="Map and places across Amsterdam, Rotterdam and Utrecht"
     >
-      <div class="explore-main__heading">
-        <div>
-            <p class="eyebrow eyebrow--small">YOUR NEXT GOOD DAY</p>
-            <h2>Three cities <span>·</span> one map</h2>
-        </div>
-          <span class="ready-tag"><span aria-hidden="true"></span>{{ places().length }} places</span>
-      </div>
-
       @if (placesWarning(); as warning) {
         <div class="catalog-warning catalog-warning--map" role="status">
           <span>{{ warning }}</span>
@@ -206,7 +204,6 @@
           [selectedPlaceId]="selectedPlaceId()"
           [discoverPlaceIds]="discoverPlaceIds()"
           (placeSelected)="selectPlace($event)"
-          (browsePlaces)="browsePlaces()"
         />
       } @else {
         <div class="map-pending" role="status" aria-live="polite">
@@ -221,11 +218,6 @@
         </div>
       }
 
-      <div class="map-caption">
-        <span class="map-caption__status"><span aria-hidden="true"></span>INTERACTIVE MAP</span>
-        <span>Map style © OpenFreeMap · Map data © OpenStreetMap contributors</span>
-      </div>
-
       @if (selectedPlace(); as place) {
         <app-place-detail
           [place]="place"
@@ -237,6 +229,9 @@
           [hubsError]="hubsError()"
           [hubCatalogLoaded]="selectedHubState()?.data !== null"
           [draftContainsPlace]="hasPlaceInDraft(place.id)"
+          [planFull]="planIsFullForPlace()"
+          [addDisabled]="planMapAddDisabled()"
+          [addActionLabel]="savedPlanContextId() === null ? 'Add to plan' : 'Add to saved plan'"
           (closed)="closePlaceDetails()"
           (addPlace)="addDetailPlaceToPlan($event)"
           (retryHubs)="retryHubs()"
@@ -244,60 +239,99 @@
       }
     </section>
 
-    <aside class="draft-panel" aria-labelledby="draft-panel-title">
-      <div class="draft-panel__heading">
-        <div>
-          <p class="draft-panel__eyebrow">YOUR PLAN</p>
-          <h2 id="draft-panel-title">Your day, taking shape</h2>
-        </div>
-        <span class="draft-count" role="status" aria-live="polite">
-          {{ draftStore.draft()?.placeIds.length ?? 0 }}
-          {{ draftStore.draft()?.placeIds.length === 1 ? 'stop' : 'stops' }}
-        </span>
-      </div>
-      @if (draftStore.isValidating()) {
-        <p class="draft-copy" role="status">Checking places in this tab&#8217;s draft&#8230;</p>
-      } @else if (draftStore.validationError(); as validationError) {
-        <div class="draft-error" role="alert">
-          <p>{{ validationError }}</p>
-          <button class="text-button" type="button" (click)="retryDraftValidation()">Retry validation</button>
-        </div>
-      } @else if (draftStore.draft(); as draft) {
-        <p class="draft-name">{{ draft.name }}</p>
-        <p class="draft-copy">Temporary tab draft for {{ draftCityName() }} &middot; not saved to the server.</p>
-      } @else {
-        <p class="draft-copy">Plan a day in one city.</p>
-      }
-      @if (draftStore.storageUnavailable()) {
-        <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
-      }
-      @if (draftStore.restoreMessage(); as restoreMessage) {
-        <p class="draft-copy draft-copy--warning" role="status">{{ restoreMessage }}</p>
-      }
-      @if (draftFeedback()) {
-        <p class="draft-feedback" role="status" aria-live="polite">{{ draftFeedback() }}</p>
-      }
-      @if (draftStore.cityConflict(); as conflict) {
-        <section class="draft-conflict" role="region" aria-labelledby="draft-conflict-title">
-          <h3 #draftConflictHeading id="draft-conflict-title" tabindex="-1">Keep the existing draft?</h3>
-          <p>
-            This tab has a {{ draftCityName() }} draft. Start a separate {{ conflict.cityName }} draft or keep the existing one?
-          </p>
-          <div class="draft-conflict__actions">
-            <button class="button button--secondary" type="button" (click)="keepExistingDraft()">Keep existing</button>
-            <button class="button button--primary" type="button" (click)="startDraftForCurrentCity()">
-              Start new for {{ conflict.cityName }}
-            </button>
+    <aside class="draft-panel" [class.draft-panel--save-error]="savedPlanContextId() === null && !!autosave.error()" aria-labelledby="draft-panel-title">
+      @if (savedPlanContextId() !== null) {
+        <div class="draft-panel__content">
+          <div class="draft-panel__heading">
+            <div>
+              <p class="draft-panel__eyebrow">CURRENT PLAN</p>
+              @if (savedPlanContextLoading()) {
+                <h2 id="draft-panel-title">Loading plan…</h2>
+              } @else if (savedPlanContext(); as savedPlan) {
+                <h2 id="draft-panel-title">{{ savedPlan.name }}</h2>
+              } @else {
+                <h2 id="draft-panel-title">Plan unavailable</h2>
+              }
+            </div>
           </div>
-        </section>
+          @if (savedPlanContextLoading()) {
+            <p class="draft-copy" role="status">Loading your saved plan…</p>
+          } @else if (savedPlanContextError(); as message) {
+            <div class="draft-error" role="alert">
+              <p>{{ message }}</p>
+              <a class="draft-editor-link" routerLink="/plans">Back to Saved Plans</a>
+            </div>
+          } @else if (savedPlanContext(); as savedPlan) {
+            <p class="draft-copy">Changes to this plan are saved automatically when you add places.</p>
+            @if (savedPlanFeedback(); as feedback) {
+              <p class="draft-feedback" [attr.role]="feedback.role" aria-live="polite">{{ feedback.message }}</p>
+            }
+          }
+        </div>
+        @if (savedPlanContext(); as savedPlan) {
+          <div class="draft-panel__actions">
+            <span class="draft-count" role="status" aria-live="polite">{{ savedPlan.placeIds.length }} / 12</span>
+            <a class="draft-editor-link" [routerLink]="['/plans', savedPlan.id]">
+              Review current plan
+              <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
+            </a>
+          </div>
+        }
+      } @else {
+        <div class="draft-panel__content">
+          <div class="draft-panel__heading">
+            <div>
+              <p class="draft-panel__eyebrow">YOUR PLAN</p>
+              <h2 id="draft-panel-title">Your day, taking shape</h2>
+            </div>
+          </div>
+          @if (draftStore.isValidating()) {
+            <p class="draft-copy" role="status">Checking places in this tab&#8217;s draft&#8230;</p>
+          } @else if (draftStore.validationError(); as validationError) {
+            <div class="draft-error" role="alert">
+              <p>{{ validationError }}</p>
+              <button class="text-button" type="button" (click)="retryDraftValidation()">Retry validation</button>
+            </div>
+          } @else if (draftStore.draft(); as draft) {
+            <p class="draft-name">{{ draft.name }}</p>
+          } @else {
+            <p class="draft-copy">Plan a day across Amsterdam, Rotterdam and Utrecht.</p>
+          }
+          @if (draftStore.storageUnavailable()) {
+            <p class="draft-copy draft-copy--warning">Browser tab storage is unavailable; this draft may not survive a refresh.</p>
+          }
+          @if (draftStore.restoreMessage(); as restoreMessage) {
+            <p class="draft-copy draft-copy--warning" role="status">{{ restoreMessage }}</p>
+          }
+          @if (draftFeedback()) {
+            <p class="draft-feedback" role="status" aria-live="polite">{{ draftFeedback() }}</p>
+          }
+          @if (autosave.pending()) {
+            <p class="draft-feedback" role="status">Saving your plan automatically…</p>
+          } @else if (autosave.error(); as message) {
+            <div class="draft-error autosave-feedback" role="alert">
+              <p>{{ message }}</p>
+              <a class="text-button" routerLink="/plans">Use or delete a saved plan</a>
+              <button class="text-button" type="button" (click)="autosave.save()">Retry saving</button>
+            </div>
+          }
+        </div>
+        <div class="draft-panel__actions">
+          <span class="draft-count" role="status" aria-live="polite">
+            {{ draftStore.draft()?.placeIds.length ?? 0 }}
+            {{ draftStore.draft()?.placeIds.length === 1 ? 'stop' : 'stops' }}
+          </span>
+          <a
+            class="draft-editor-link"
+            appPointerLight
+            [routerLink]="['/plans/new']"
+            [queryParams]="{ city: draftEditorCityId() }"
+          >
+            {{ draftStore.draft() ? 'Review current plan' : 'Start a day plan' }}
+            <span aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>
+          </a>
+        </div>
       }
-      <a
-        class="draft-editor-link"
-        [routerLink]="['/plans/new']"
-        [queryParams]="{ city: draftEditorCityId() }"
-      >
-        {{ draftStore.draft() ? 'Review and save draft' : 'Start a day plan' }}
-      </a>
     </aside>
     </div>
 

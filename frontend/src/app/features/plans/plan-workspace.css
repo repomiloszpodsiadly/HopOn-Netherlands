@@ -1,0 +1,260 @@
+.plans-shell, .plan-editor-shell {
+  width: min(calc(100% - 48px), 1480px);
+  min-height: calc(100dvh - 48px);
+  margin: 24px auto;
+  padding: 0 24px;
+  border: 1px solid #fffaf3;
+  border-radius: 30px;
+  background: radial-gradient(ellipse at 0 0, rgb(247 208 183 / 16%), transparent 45%), #fff9ef;
+  box-shadow: 0 18px 50px rgb(117 77 35 / 15%);
+}
+.plans-topbar { height: 64px; }
+.plans-main, .plan-editor-main, .plan-details-main { min-height: 0; padding-block: 24px; }
+.plans-main h1, .plan-editor-heading h1, .plan-details-heading h1 { font-size: clamp(32px, 3.4vw, 44px); line-height: 1.08; letter-spacing: -1px; }
+.plans-intro { font-size: 14px; }
+.plans-footer { margin-top: 0; padding-block: 12px; font-size: 11px; }
+.editor-settings { display: grid; gap: 18px; align-content: start; }
+.editor-feedback:empty { display: none; }
+.plans-list-heading { margin-bottom: 22px; }
+.plans-empty { padding: 28px; }
+.plans-empty { background: url('/assets/brand/day-plan-skyline.svg') right bottom / 65% auto no-repeat, linear-gradient(135deg, #fffbf3, #fffdf8); }
+.plans-empty__mark { width: 88px; height: 88px; border-radius: 0; background: transparent; }
+.plans-empty__mark img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.plans-empty h2 { font-size: 28px; }
+.plans-empty p { font-size: 14px; }
+.plan-heading-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  margin-block: 6px 10px;
+}
+.plan-heading-row h1, .plan-details-heading .plan-heading-row h1 { min-width: 0; margin: 0; }
+.plan-back-link {
+  display: inline-flex;
+  min-height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid #dfd1bb;
+  border-radius: 999px;
+  background: #fffcf6;
+  color: #66634e;
+  font-size: 12px;
+  font-weight: 650;
+  text-decoration: none;
+  transition: background-color 180ms ease, border-color 180ms ease;
+}
+.plan-back-link svg { width: 16px; height: 16px; }
+.plan-back-link:hover { border-color: #bca682; background: #f6eddf; }
+@media (prefers-reduced-motion: reduce) {
+  .plan-back-link { transition: none; }
+}
+.editor-field input, .editor-field select { min-height: 48px; }
+.editor-empty h3 { font-size: 23px; }
+.editor-empty p { max-width: 330px; }
+.details-empty { margin: 0; padding: 20px; border: 1px dashed #d8c7ac; border-radius: 16px; background: #fffaf1; color: var(--color-muted); font-size: 14px; line-height: 1.5; }
+
+@media (min-width: 1000px) {
+  :host { height: 100dvh; overflow: hidden; }
+  .plans-shell, .plan-editor-shell { display: flex; height: calc(100dvh - 48px); min-height: 0; flex-direction: column; }
+  .plans-topbar, .plans-footer { flex: 0 0 auto; }
+  .plans-list-main { display: flex; width: min(100%, 1120px); min-height: 0; flex: 1; flex-direction: column; align-items: stretch; gap: 18px; overflow: hidden; }
+  .plans-list-heading { flex: 0 0 auto; align-items: center; margin: 0; }
+  .plans-list-heading h1 { margin-block: 6px 10px; }
+  .plans-list-heading .plans-intro { max-width: 580px; }
+  .saved-plan-list { min-height: 0; flex: 1; align-content: start; grid-auto-rows: max-content; overflow-y: auto; padding: 6px; }
+  .saved-plan-card { gap: 10px; padding: 20px; }
+  .saved-plan-card__open { gap: 7px; }
+  .saved-plan-card__open h2 { font-size: 26px; }
+  .plans-empty { min-height: 0; flex: 1; align-content: center; justify-items: center; text-align: center; }
+  .plans-empty p { margin-bottom: 6px; }
+  .plans-loading, .plans-state { min-height: 0; overflow: auto; }
+  .plan-editor-main { display: flex; width: min(100%, 1080px); min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; }
+  .plan-editor-form { min-height: 0; flex: 1; grid-template-columns: minmax(250px, .85fr) minmax(0, 1.15fr); grid-template-rows: minmax(0, 1fr) auto auto; grid-template-areas: 'settings stops' 'feedback feedback' 'actions actions'; gap: 12px 24px; }
+  .editor-settings { display: flex; grid-area: settings; min-height: 0; flex-direction: column; overflow-y: auto; padding: 4px; }
+  .editor-settings > .editor-setup.plan-settings-list { display: grid; min-height: 0; flex: 1; grid-template-rows: auto auto auto auto minmax(0, 1fr); }
+  .editor-setup.plan-settings-list .plan-settings-row--description { min-height: 0; height: 100%; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .editor-setup.plan-settings-list .plan-settings-row--description textarea { height: 100%; min-height: 136px; resize: none; }
+  .editor-places { grid-area: stops; display: flex; min-height: 0; flex-direction: column; padding-top: 4px; }
+  .editor-place-list { min-height: 0; flex: 1; }
+  .editor-empty { min-height: 0; flex: 1; align-content: center; justify-items: center; overflow-y: auto; padding: 20px; text-align: center; background: url('/assets/brand/day-plan-skyline.svg') right bottom / 100% auto no-repeat, #fffdf8; }
+  .editor-feedback { grid-area: feedback; }
+  .editor-actions--submit { grid-area: actions; margin-top: 0; padding: 12px 4px 0; border-top: 1px solid var(--color-border); }
+  .editor-section-heading h2 { font-size: 23px; }
+  .plan-details-main { display: flex; width: 100%; min-height: 0; flex: 1; flex-direction: column; overflow-y: auto; padding-inline: 4px; }
+  .plan-details-heading { gap: 18px; }
+  .plan-details-heading h1 { margin-block: 5px 8px; }
+  .plan-details-main > :not(.plan-details-form) { flex-shrink: 0; }
+  .plan-details-form {
+    min-height: 0;
+    flex: 1;
+    grid-template-columns: minmax(300px, .8fr) minmax(0, 1.2fr);
+    grid-template-rows: minmax(0, 1fr) auto auto;
+    grid-template-areas: 'settings stops' 'feedback stops' 'actions stops';
+    gap: 12px 24px;
+    padding: 4px;
+  }
+  .details-settings {
+    display: flex;
+    grid-area: settings;
+    min-height: 0;
+    flex-direction: column;
+    overflow-y: auto;
+    padding: 4px;
+  }
+  .details-settings > .details-name-card { display: grid; min-height: 0; flex: 1; grid-template-rows: auto minmax(0, 1fr); }
+  .details-name-card .plan-settings-row--description { min-height: 0; height: 100%; grid-template-rows: minmax(0, 1fr); align-items: stretch; }
+  .details-name-card .plan-settings-row--description textarea { height: 100%; min-height: 136px; resize: none; }
+  .details-stops { display: flex; grid-area: stops; min-width: 0; min-height: 0; flex-direction: column; gap: 10px; overflow-y: auto; padding: 12px; }
+  .details-section-heading, .details-stops > .details-empty { flex-shrink: 0; }
+  .details-stop-list { min-height: 0; flex: 1; overflow: auto; }
+  .details-feedback { grid-area: feedback; }
+  .details-form-actions { grid-area: actions; padding-top: 5px; border-top: 1px solid var(--color-border); }
+  .details-section-heading h2 { font-size: 25px; }
+  .details-settings .plan-details-heading h1 { font-size: 32px; }
+}
+
+@media (min-width: 1000px) and (max-height: 760px) {
+  .plan-editor-main, .plan-details-main { padding-block: 16px; }
+  .plan-details-main { gap: 10px; padding-block: 12px; }
+  .plan-details-heading h1 { font-size: 36px; }
+  .editor-setup { gap: 12px; padding: 14px; }
+  .editor-city { padding-top: 12px; }
+  .details-settings { gap: 12px; }
+  .details-field input, .details-field select { min-height: 48px; }
+}
+
+@media (min-width: 1000px) and (max-height: 680px) {
+  .plan-details-main { padding-block: 8px; }
+  .details-stops { gap: 6px; padding: 8px; }
+  .details-section-heading h2 { margin-top: 4px; font-size: 22px; }
+  .details-section-heading .plans-eyebrow { font-size: 10px; }
+}
+
+@media (max-width: 999px) {
+  .plan-editor-main, .plan-details-main, .plans-list-main { width: min(100%, 780px); }
+}
+
+@media (max-width: 760px) {
+  .plans-shell, .plan-editor-shell { width: calc(100% - 20px); min-height: calc(100dvh - 20px); margin: 10px auto; padding: 0 16px calc(102px + env(safe-area-inset-bottom)); border-radius: 24px; }
+  .plans-topbar { height: 60px; }
+  .plans-main, .plan-editor-main, .plan-details-main { min-height: 0; padding-block: 22px; }
+  .plans-list-heading { gap: 14px; }
+  .plans-list-heading h1, .plan-editor-heading h1, .plan-details-heading h1 { font-size: 34px; }
+  .plan-heading-row { gap: 10px; }
+  .plan-back-link { gap: 6px; padding-inline: 10px; font-size: 11px; }
+  .plan-back-link svg { width: 14px; height: 14px; }
+  .plans-empty { padding: 22px; }
+  .plans-empty h2 { font-size: 26px; }
+  .plans-empty p { margin: 0; }
+  .plans-footer { padding-block: 14px; gap: 4px; }
+  .plan-editor-form { gap: 18px; }
+  .editor-empty { padding: 18px; }
+  .editor-actions--submit { position: sticky; z-index: 2; bottom: calc(76px + env(safe-area-inset-bottom)); padding: 12px; border: 1px solid var(--color-border); border-radius: 18px; background: #fffaf3; box-shadow: 0 6px 20px rgb(117 77 35 / 12%); }
+  .editor-actions--submit { flex-direction: row; align-items: center; flex-wrap: nowrap; }
+  .editor-actions--submit > * { width: auto; }
+  .editor-actions--submit .editor-button { flex: 1; }
+  .editor-actions--submit .editor-cancel { flex: 0 0 auto; font-size: 13px; }
+  .editor-cancel { justify-content: center; }
+  .editor-field small { font-size: 12px; }
+  .details-form-actions { padding: 12px; border: 1px solid var(--color-border); border-radius: 18px; background: #fffaf3; box-shadow: 0 6px 20px rgb(117 77 35 / 12%); }
+  .details-form-actions { flex-direction: row; align-items: center; }
+  .details-form-actions > * { width: auto; }
+  .details-form-actions .plans-button { width: auto; flex: 1; }
+  .details-unsaved-note { flex-basis: 100%; text-align: left; }
+}
+
+/* Compact settings rows are shared by the two plan editors. */
+.editor-setup.plan-settings-list,
+.details-name-card.plan-settings-list {
+  gap: 0;
+  padding: 0;
+  border-radius: 14px;
+  background: #fffbf4;
+  box-shadow: 0 2px 8px rgb(115 85 46 / 3%);
+}
+.plan-settings-list .plan-settings-row {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  grid-template-columns: 92px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  padding: 6px 12px;
+  border: 0;
+  color: #655d4d;
+  font-size: 12px;
+  font-weight: 550;
+}
+.plan-settings-list .plan-settings-row input,
+.plan-settings-list .plan-settings-row select {
+  height: 40px;
+  min-height: 40px;
+  padding-inline: 11px;
+  border-radius: 9px;
+  font-size: 14px;
+  font-weight: 500;
+}
+.plan-settings-label small {
+  display: block;
+  margin-top: 3px;
+  color: #958269;
+  font-size: 10px;
+  font-weight: 450;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.plan-settings-list .plan-settings-row--description {
+  align-items: start;
+  border-top: 1px solid #eee2d0;
+}
+.plan-settings-row--description > .plan-settings-label { padding-top: 5px; }
+.plan-settings-row textarea {
+  width: 100%;
+  min-width: 0;
+  height: 56px;
+  min-height: 56px;
+  padding: 8px 11px;
+  resize: vertical;
+  border: 1px solid #decdb3;
+  border-radius: 9px;
+  background: #fffefb;
+  color: var(--color-ink);
+  font: 400 14px/1.4 system-ui, sans-serif;
+}
+.plan-settings-row textarea:disabled { opacity: .65; }
+.editor-setup.plan-settings-list .editor-setup__heading { gap: 8px; padding: 10px 12px; border-bottom: 1px solid #eaddc9; }
+.editor-setup.plan-settings-list .editor-setup__heading h2 { font: 550 15px/1.3 system-ui, sans-serif; }
+.editor-setup.plan-settings-list .editor-setup__icon { width: 24px; height: 24px; border-radius: 8px; }
+.editor-setup.plan-settings-list .editor-setup__icon svg { width: 15px; height: 15px; }
+.editor-setup.plan-settings-list .editor-city { border-top: 1px solid #eee2d0; }
+.editor-setup.plan-settings-list .plan-settings-row + .plan-settings-row { border-top: 1px solid #eee2d0; }
+.editor-setup.plan-settings-list .editor-city > span { font-size: 12px; }
+.plan-editor-heading h1 { font-size: 36px; }
+.details-settings .plan-details-heading h1 { font-size: 28px; }
+.editor-settings, .details-settings { gap: 12px; }
+
+@media (max-width: 999px), (pointer: coarse) {
+  .plan-settings-list .plan-settings-row input,
+  .plan-settings-list .plan-settings-row select { height: 44px; min-height: 44px; font-size: 16px; }
+  .plan-settings-row textarea { min-height: 64px; font-size: 16px; }
+}
+@media (max-width: 760px) {
+  .plan-settings-list .plan-settings-row { grid-template-columns: 76px minmax(0, 1fr); gap: 8px; padding-inline: 10px; }
+  .plan-editor-heading h1 { font-size: 32px; }
+  .details-settings .plan-details-heading h1 { font-size: 28px; }
+  .plan-settings-list .plan-settings-row--description { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .plan-settings-row--description > .plan-settings-label { display: flex; justify-content: space-between; gap: 10px; padding: 0; }
+  .plan-settings-row--description .plan-settings-label small { margin: 0; }
+  .plan-settings-row textarea { min-height: 72px; }
+}
+
+@media (min-width: 1000px) and (max-height: 680px) {
+  .plan-editor-main { padding-block: 6px; }
+  .plan-editor-heading { margin-bottom: 6px; }
+  .plan-editor-heading h1 { font-size: 32px; }
+  .editor-setup.plan-settings-list .plan-settings-row--description textarea { min-height: 76px; }
+}

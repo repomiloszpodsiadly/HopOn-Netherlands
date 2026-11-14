@@ -3,13 +3,13 @@
     class="bottom-nav__item"
     routerLink="/"
     routerLinkActive="bottom-nav__item--active"
-    [routerLinkActiveOptions]="{ exact: true }"
+    [routerLinkActiveOptions]="{ paths: 'exact', queryParams: 'exact', matrixParams: 'ignored', fragment: 'exact' }"
     ariaCurrentWhenActive="page"
   >
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 10 8-6 8 6v9a1 1 0 0 1-1 1h-5v-6h-4v6H5a1 1 0 0 1-1-1v-9Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/></svg>
     <span>Explore</span>
   </a>
-  <a class="bottom-nav__item" [href]="mapHref" (click)="navigateToMap($event)">
+  <a class="bottom-nav__item" [class.bottom-nav__item--active]="mapActive()" [attr.aria-current]="mapActive() ? 'location' : null" [href]="mapHref" (click)="navigateToMap($event)">
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg>
     <span>Map</span>
   </a>

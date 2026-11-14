@@ -52,7 +52,6 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input() selectedPlaceId: string | null = null;
   @Input() discoverPlaceIds: readonly string[] = [];
   @Output() readonly placeSelected = new EventEmitter<string>();
-  @Output() readonly browsePlaces = new EventEmitter<void>();
   @ViewChild('mapHost', { static: true }) private readonly mapHost!: ElementRef<HTMLElement>;
 
   readonly mapReady = signal(false);
@@ -172,6 +171,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
         attributionControl: { compact: false },
       });
       this.map = map;
+      this.observeMapSize(map, generation);
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), 'top-right');
       const onLoad = () => this.onMapLoaded(map, generation);
       map.on('load', onLoad);
@@ -210,7 +210,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
         source: PLACES_SOURCE_ID,
         filter: ['has', 'point_count'],
         paint: {
-          'circle-color': ['step', ['get', 'point_count'], '#2b7774', 30, '#276964', 100, '#202a2b'],
+          'circle-color': ['step', ['get', 'point_count'], '#7c7b61', 30, '#62654c', 100, '#4b503d'],
           'circle-radius': ['step', ['get', 'point_count'], 18, 30, 23, 100, 29],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': 2,
@@ -234,7 +234,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
         source: PLACES_SOURCE_ID,
         filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-color': ['case', ['get', 'selected'], '#d96843', ['get', 'discover'], '#d49a42', '#2b7774'],
+          'circle-color': ['case', ['get', 'selected'], '#b4653f', ['get', 'discover'], '#b39460', '#78765d'],
           'circle-radius': ['case', ['get', 'selected'], 9, ['get', 'discover'], 7, 6],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': ['case', ['get', 'selected'], 3, 1.5],
@@ -310,6 +310,32 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     };
     map.on('mouseleave', PLACE_POINTS_LAYER_ID, onPlaceMouseLeave);
     this.mapCleanup.push(() => map.off('mouseleave', PLACE_POINTS_LAYER_ID, onPlaceMouseLeave));
+  }
+
+  private observeMapSize(map: MapLibreMap, generation: number): void {
+    if (typeof ResizeObserver === 'undefined') {
+      return;
+    }
+    let previousWidth = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry || entry.contentRect.width === 0 || entry.contentRect.height === 0
+        || !this.isCurrentMap(map, generation)) {
+        return;
+      }
+      const widthChanged = Math.abs(entry.contentRect.width - previousWidth) > 1;
+      previousWidth = entry.contentRect.width;
+      map.resize();
+      if (!this.mapReady()) {
+        return;
+      }
+      if (this.currentSelectedPlace() !== null) {
+        this.scheduleSelectedPlaceFocus();
+      } else if (widthChanged) {
+        this.moveToAllCities();
+      }
+    });
+    observer.observe(this.mapHost.nativeElement);
+    this.mapCleanup.push(() => observer.disconnect());
   }
 
   private moveToAllCities(): void {

@@ -10,12 +10,14 @@ const PLAN_ID = '614c6654-95e7-4ad6-8fd7-c1fc0b01e95e';
 const PLACE_IDS = ['amsterdam-node-34050791', 'amsterdam-node-2720969322'];
 const REQUEST: PlanUpsertRequest = {
   name: 'Amsterdam afternoon',
+  description: '',
   cityId: 'amsterdam',
   placeIds: PLACE_IDS,
 };
 const RESPONSE: PlanResponse = {
   id: PLAN_ID,
   name: REQUEST.name,
+  description: '',
   cityId: REQUEST.cityId,
   placeIds: PLACE_IDS,
   createdAt: '2026-11-10T12:00:00Z',
@@ -52,6 +54,20 @@ describe('PlansApiService', () => {
     expect(response).toEqual(RESPONSE);
   });
 
+  it('accepts a confirmed empty plan and can read it back', () => {
+    const empty = { ...RESPONSE, placeIds: [] };
+    let created: PlanResponse | undefined;
+    service.createPlan({ ...REQUEST, placeIds: [] }).subscribe((plan) => { created = plan; });
+    const request = httpTesting.expectOne('/api/plans');
+    expect(request.request.body.placeIds).toEqual([]);
+    request.flush(empty, { status: 201, statusText: 'Created', headers: new HttpHeaders({ Location: `/api/plans/${PLAN_ID}` }) });
+    expect(created).toEqual(empty);
+    let reloaded: PlanResponse | undefined;
+    service.getPlan(PLAN_ID).subscribe((plan) => { reloaded = plan; });
+    httpTesting.expectOne(`/api/plans/${PLAN_ID}`).flush(empty);
+    expect(reloaded?.placeIds).toEqual([]);
+  });
+
   it('loads the server list and one authoritative saved plan', () => {
     let plans: readonly PlanResponse[] | undefined;
     service.getPlans().subscribe((result) => (plans = result));
@@ -68,9 +84,19 @@ describe('PlansApiService', () => {
     expect(plan).toEqual(RESPONSE);
   });
 
+  it('rejects responses beyond the current name and description limits', () => {
+    for (const invalid of [{ ...RESPONSE, name: 'n'.repeat(31) }, { ...RESPONSE, description: 'd'.repeat(501) }]) {
+      let failure: unknown;
+      service.getPlan(PLAN_ID).subscribe({ error: error => { failure = error; } });
+      httpTesting.expectOne(`/api/plans/${PLAN_ID}`).flush(invalid);
+      expect(failure).toBeInstanceOf(UnexpectedPlanResponseError);
+    }
+  });
+
   it('sends a complete ordered replacement and requires a valid 200 response', () => {
     const replacement: PlanUpsertRequest = {
       name: 'A reordered day',
+      description: '',
       cityId: 'amsterdam',
       placeIds: [...PLACE_IDS].reverse(),
     };
@@ -148,5 +174,22 @@ describe('PlansApiService', () => {
     expect(apiErrorMessage(error, 'Could not save plan')).toBe('Plan name must not be blank.');
     expect(apiErrorMessage(new HttpErrorResponse({ status: 0 }), 'Could not save plan'))
       .toContain('Check that the backend is running');
+  });
+
+  it('normalizes legacy responses without a description and rejects invalid descriptions', () => {
+    const legacy: Record<string, unknown> = { ...RESPONSE };
+    delete legacy['description'];
+    let restored: PlanResponse | undefined;
+    service.getPlan(PLAN_ID).subscribe(plan => { restored = plan; });
+    httpTesting.expectOne(`/api/plans/${PLAN_ID}`).flush(legacy);
+    expect(restored?.description).toBe('');
+
+    const errors: unknown[] = [];
+    for (const description of [null, 'x'.repeat(1001)]) {
+      service.getPlan(PLAN_ID).subscribe({ error: (error: unknown) => errors.push(error) });
+      httpTesting.expectOne(`/api/plans/${PLAN_ID}`).flush({ ...RESPONSE, description });
+    }
+    expect(errors).toHaveLength(2);
+    expect(errors.every(error => error instanceof UnexpectedPlanResponseError)).toBe(true);
   });
 });

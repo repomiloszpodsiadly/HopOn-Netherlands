@@ -4,7 +4,6 @@ import {
   ChangeDetectionStrategy,
   Component,
   DestroyRef,
-  ElementRef,
   HostListener,
   Injector,
   ViewChild,
@@ -12,10 +11,12 @@ import {
   inject,
   signal,
 } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import {
   catchError,
+  combineLatest,
+  distinctUntilChanged,
   finalize,
   map,
   merge,
@@ -24,14 +25,18 @@ import {
   startWith,
   Subject,
   switchMap,
+  tap,
 } from 'rxjs';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { CitiesApiService } from '../../core/api/cities-api.service';
 import { DiscoverApiService } from '../../core/api/discover-api.service';
 import { HealthApiService, UnexpectedHealthResponseError } from '../../core/api/health-api.service';
 import { PlacesApiService } from '../../core/api/places-api.service';
+import { PlansApiService, UnexpectedPlanResponseError } from '../../core/api/plans-api.service';
 import { StopsApiService } from '../../core/api/stops-api.service';
 import { DraftPlanStore } from '../../core/services/draft-plan.store';
+import { ActivePlanStore } from '../../core/services/active-plan.store';
+import { PlanAutosaveService } from '../../core/services/plan-autosave.service';
 import {
   CityDto,
   CityId,
@@ -43,7 +48,10 @@ import {
   PlaceDto,
   isCityId,
 } from '../../core/models/catalog.models';
+import { PlanResponse, PlanUpsertRequest } from '../../core/models/plan.models';
 import { MainNavigationComponent } from '../shared/main-navigation';
+import { CategoryIconComponent } from '../shared/category-icon';
+import { PointerLightDirective } from '../shared/pointer-light';
 import { MapViewportComponent } from './map-viewport';
 import { NearbyHub, nearbyHubsForPlace } from './nearby-hubs';
 import { AddPlaceEvent, PlaceDetailComponent } from './place-detail';
@@ -89,6 +97,22 @@ type DiscoverCityOutcome = Readonly<{
   error: string | null;
 }>;
 
+type SavedPlanContextResult = Readonly<{
+  id: string;
+  plan: PlanResponse | null;
+  error: string | null;
+}>;
+
+type SavedPlanFeedback = Readonly<{
+  message: string;
+  role: 'status' | 'alert';
+}>;
+
+type SavedPlanAddResult = Readonly<{
+  plan: PlanResponse;
+  addedCount: number;
+}>;
+
 function initialCityResourceStates<T>(): Record<CityId, CityResourceState<T>> {
   return Object.fromEntries(CITY_IDS.map((cityId) => [cityId, {
     status: 'loading',
@@ -113,12 +137,14 @@ export function resolveCityId(value: string | null): CityId {
 
 @Component({
   selector: 'app-explore-page',
-  imports: [MapViewportComponent, PlaceDetailComponent, PlaceResultsListComponent, MainNavigationComponent, RouterLink],
+  imports: [MapViewportComponent, PlaceDetailComponent, PlaceResultsListComponent, MainNavigationComponent, CategoryIconComponent, PointerLightDirective, RouterLink],
   templateUrl: './explore-page.html',
-  styleUrl: './explore-page.css',
+  styleUrls: ['./explore-page.css', './explore-atmosphere.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ExplorePage {
+  readonly autosave = inject(PlanAutosaveService);
+  private readonly activePlanStore = inject(ActivePlanStore);
   private readonly healthApi = inject(HealthApiService);
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
@@ -126,6 +152,7 @@ export class ExplorePage {
   private readonly placesApi = inject(PlacesApiService);
   private readonly stopsApi = inject(StopsApiService);
   private readonly discoverApi = inject(DiscoverApiService);
+  private readonly plansApi = inject(PlansApiService);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly retryCities$ = new Subject<void>();
@@ -135,9 +162,7 @@ export class ExplorePage {
   private healthCheckPending = false;
   private discoverRequestId = 0;
   private readonly pendingDiscoverOutcomes = new Map<CityId, DiscoverCityOutcome>();
-  private validatingDraftCityId: CityId | null = null;
   private detailFocusReturn: HTMLElement | null = null;
-  private draftFocusReturn: HTMLElement | null = null;
 
   readonly cityIds = CITY_IDS;
   readonly categoryOptions: readonly Readonly<{ label: string; value: PlaceCategory | null }>[] = [
@@ -225,18 +250,18 @@ export class ExplorePage {
   readonly discoverError = signal<string | null>(null);
   readonly discoverPlaceIds = signal<readonly string[]>([]);
   readonly draftFeedback = signal('');
+  readonly savedPlanContextId = signal<string | null>(null);
+  readonly savedPlanContext = signal<PlanResponse | null>(null);
+  readonly savedPlanContextLoading = signal(false);
+  readonly savedPlanContextError = signal<string | null>(null);
+  readonly savedPlanAddPending = signal(false);
+  readonly savedPlanFeedback = signal<SavedPlanFeedback | null>(null);
   readonly draftStore = inject(DraftPlanStore);
-  @ViewChild('placeResults') private placeResultsElement?: ElementRef<HTMLElement>;
   @ViewChild(PlaceDetailComponent) private placeDetail?: PlaceDetailComponent;
-  @ViewChild('draftConflictHeading') private draftConflictHeadingElement?: ElementRef<HTMLElement>;
   @ViewChild(MapViewportComponent) private mapViewport?: MapViewportComponent;
 
   readonly draftEditorCityId = computed(
     () => this.draftStore.draft()?.cityId ?? this.draftStore.pendingCityId() ?? DEFAULT_CITY,
-  );
-  readonly draftCityName = computed(
-    () => this.cities().find((city) => city.id === this.draftEditorCityId())?.name
-      ?? CITY_LABELS[this.draftEditorCityId()],
   );
   readonly selectedPlace = computed(() => {
     const selectedId = this.selectedPlaceId();
@@ -311,11 +336,60 @@ export class ExplorePage {
 
   constructor() {
     this.normalizeLegacyCityUrl();
+    this.watchSavedPlanContext();
     this.checkHealth();
     this.loadCities();
     this.watchDiscoverRequests();
     this.loadPlacesForAllCities();
     this.loadHubsForAllCities();
+  }
+
+  private watchSavedPlanContext(): void {
+    combineLatest([this.route.queryParamMap, toObservable(this.activePlanStore.selectedId)])
+      .pipe(
+        map(([params, activeId]) => params.get('plan')?.trim() || activeId),
+        distinctUntilChanged(),
+        tap((id) => {
+          this.savedPlanContextId.set(id);
+          this.savedPlanContext.set(null);
+          this.savedPlanContextError.set(null);
+          this.savedPlanFeedback.set(null);
+          this.savedPlanContextLoading.set(id !== null);
+        }),
+        switchMap((id) => id === null
+          ? of(null)
+          : (this.autosave.lastSaved()?.id === id ? of(this.autosave.lastSaved()!) : this.plansApi.getPlan(id)).pipe(
+            map((plan) => ({ id, plan, error: null }) satisfies SavedPlanContextResult),
+            catchError((error: unknown) => {
+              if (error instanceof HttpErrorResponse && error.status === 404) {
+                this.activePlanStore.clear(id);
+                if (!this.route.snapshot.queryParamMap.has('plan')) {
+                  this.savedPlanContextId.set(null);
+                  this.savedPlanContextLoading.set(false);
+                  return of(null);
+                }
+              }
+              return of({
+                id,
+                plan: null,
+                error: apiErrorMessage(error, 'This saved plan could not be loaded'),
+              } satisfies SavedPlanContextResult);
+            }),
+          )),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((result) => {
+        if (result === null || result.id !== this.savedPlanContextId()) {
+          return;
+        }
+        this.savedPlanContextLoading.set(false);
+        if (result.error !== null || result.plan === null) {
+          this.savedPlanContextError.set(result.error ?? 'This saved plan could not be loaded.');
+          return;
+        }
+        this.savedPlanContext.set(result.plan);
+        this.activePlanStore.select(result.plan.id);
+      });
   }
 
   private normalizeLegacyCityUrl(): void {
@@ -353,18 +427,11 @@ export class ExplorePage {
   }
 
   retryDraftValidation(): void {
-    const pendingCityId = this.draftStore.pendingCityId();
-    if (pendingCityId === null) {
+    if (this.draftStore.pendingCityId() === null) {
       return;
     }
     this.draftStore.beginValidation();
-    const loadedPlaces = this.places().filter((place) => place.cityId === pendingCityId);
-    if (loadedPlaces.length > 0) {
-      this.draftStore.validatePendingDraft(pendingCityId, loadedPlaces);
-      return;
-    }
-    this.validatingDraftCityId = null;
-    this.validateStoredDraftForCity(pendingCityId);
+    this.retryPlaces();
   }
 
   onSearchInput(event: Event): void {
@@ -387,15 +454,6 @@ export class ExplorePage {
 
   showMorePlaces(): void {
     this.visiblePlaceLimit.update((limit) => limit + PLACE_BATCH_SIZE);
-  }
-
-  browsePlaces(): void {
-    const results = this.placeResultsElement?.nativeElement;
-    results?.focus();
-    const prefersReducedMotion = typeof window !== 'undefined'
-      && typeof window.matchMedia === 'function'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    results?.scrollIntoView({ behavior: prefersReducedMotion ? 'auto' : 'smooth', block: 'start' });
   }
 
   selectPlace(placeId: string, trigger?: EventTarget | null): void {
@@ -438,11 +496,24 @@ export class ExplorePage {
   }
 
   hasPlaceInDraft(placeId: string): boolean {
-    const draft = this.draftStore.draft();
-    const place = this.places().find((candidate) => candidate.id === placeId);
-    return place !== undefined
-      && draft?.cityId === place.cityId
-      && draft.placeIds.includes(placeId);
+    if (this.savedPlanContextId() !== null) {
+      return this.savedPlanContext()?.placeIds.includes(placeId) ?? false;
+    }
+    return this.draftStore.draft()?.placeIds.includes(placeId) ?? false;
+  }
+
+  planIsFullForPlace(): boolean {
+    if (this.savedPlanContextId() !== null) {
+      const plan = this.savedPlanContext();
+      return plan !== null && plan.placeIds.length >= 12;
+    }
+    return (this.draftStore.draft()?.placeIds.length ?? 0) >= 12;
+  }
+
+  planMapAddDisabled(): boolean {
+    return this.autosave.pending() || (this.savedPlanContextId() === null && this.autosave.capacityReached()) || this.savedPlanAddPending()
+      || (this.savedPlanContextId() !== null
+        && (this.savedPlanContextLoading() || this.savedPlanContext() === null));
   }
 
   chooseDiscoverTheme(theme: DiscoverTheme): void {
@@ -483,12 +554,12 @@ export class ExplorePage {
     this.discoverRequest$.next(request);
   }
 
-  addPlaceToPlan(placeId: string, trigger?: EventTarget | null): void {
-    this.requestDraftAdd([placeId], trigger);
+  addPlaceToPlan(placeId: string): void {
+    this.requestDraftAdd([placeId]);
   }
 
   addDetailPlaceToPlan(event: AddPlaceEvent): void {
-    this.addPlaceToPlan(event.placeId, event.trigger);
+    this.addPlaceToPlan(event.placeId);
   }
 
   cityName(cityId: CityId): string {
@@ -499,61 +570,51 @@ export class ExplorePage {
     return this.places().find((place) => place.id === placeId) ?? null;
   }
 
-  addDiscoverSelection(cityId: CityId, trigger?: EventTarget | null): void {
+  addDiscoverSelection(cityId: CityId): void {
     const placeIds = this.discoverGroups().find((group) => group.cityId === cityId)?.placeIds ?? [];
-    this.requestDraftAdd(placeIds, trigger);
+    this.requestDraftAdd(placeIds);
   }
 
-  keepExistingDraft(): void {
-    this.draftStore.keepExistingDraft();
-    this.restoreDraftFocus();
-  }
-
-  startDraftForCurrentCity(): void {
-    const conflict = this.draftStore.cityConflict();
-    if (conflict === null) {
-      this.draftStore.keepExistingDraft();
-      this.draftFeedback.set('The selected city changed. Add the place again to start a draft there.');
-      this.restoreDraftFocus();
-      return;
-    }
-    this.draftStore.startDraftForRequestedCity();
-    this.draftFeedback.set(`Started a new ${conflict.cityName} tab draft.`);
-    this.restoreDraftFocus();
-  }
-
-  private requestDraftAdd(placeIds: readonly string[], trigger?: EventTarget | null): void {
-    const requestedPlaces = [...new Set(placeIds)]
+  private requestDraftAdd(placeIds: readonly string[]): void {
+    if (this.planMapAddDisabled()) return;
+    const uniqueIds = [...new Set(placeIds)];
+    const requestedPlaces = uniqueIds
       .map((placeId) => this.places().find((place) => place.id === placeId))
       .filter((place): place is PlaceDto => place !== undefined);
-    const requestedCities = new Set(requestedPlaces.map((place) => place.cityId));
-    if (requestedCities.size > 1) {
-      this.draftFeedback.set('A saved plan can include places from one city. Add each city’s picks to a separate plan.');
+    if (requestedPlaces.length !== uniqueIds.length) {
+      if (this.savedPlanContextId() !== null) {
+        this.savedPlanFeedback.set({ message: 'Some selected places are not available in the loaded catalog. Nothing was changed.', role: 'alert' });
+      } else {
+        this.draftFeedback.set('Some selected places are not available in the loaded catalog. Nothing was changed.');
+      }
       return;
     }
-    const requestedCityId = requestedPlaces[0]?.cityId;
-    if (requestedCityId === undefined) {
-      this.draftFeedback.set('There are no verified places to add.');
+    if (requestedPlaces.length === 0) {
+      const message = 'There are no verified places to add.';
+      if (this.savedPlanContextId() !== null) {
+        this.savedPlanFeedback.set({ message, role: 'alert' });
+      } else {
+        this.draftFeedback.set(message);
+      }
       return;
     }
-    const cityName = this.cityName(requestedCityId);
+    if (this.savedPlanContextId() !== null) {
+      this.requestSavedPlanAdd(requestedPlaces);
+      return;
+    }
     const result = this.draftStore.addPlaces(
-      requestedCityId,
-      cityName,
       requestedPlaces.map((place) => place.id),
-      this.places().filter((place) => place.cityId === requestedCityId),
+      this.places(),
     );
-    if (result.status === 'city-conflict') {
-      this.draftFocusReturn = asHtmlElement(trigger);
-      this.draftFeedback.set('');
-      this.focusAfterRender(() => this.draftConflictHeadingElement?.nativeElement.focus());
-      return;
-    }
     switch (result.status) {
+      case 'limit-reached':
+        this.draftFeedback.set('This plan has a 12-place limit. Remove a place before adding another. Nothing was changed.');
+        break;
       case 'added':
         this.draftFeedback.set(
           `Added ${result.addedCount} place${result.addedCount === 1 ? '' : 's'} to the tab draft${result.alreadyPresentCount > 0 ? `; ${result.alreadyPresentCount} already there` : ''}.`,
         );
+        this.autosave.save();
         break;
       case 'already-added':
         this.draftFeedback.set('Already in plan.');
@@ -567,13 +628,75 @@ export class ExplorePage {
     }
   }
 
-  private restoreDraftFocus(): void {
-    this.focusAfterRender(() => {
-      if (this.draftFocusReturn?.isConnected) {
-        this.draftFocusReturn.focus();
-      }
-      this.draftFocusReturn = null;
-    });
+  private requestSavedPlanAdd(requestedPlaces: readonly PlaceDto[]): void {
+    const plan = this.savedPlanContext();
+    if (plan === null || this.savedPlanAddPending()) {
+      return;
+    }
+    this.savedPlanAddPending.set(true);
+    this.savedPlanFeedback.set(null);
+    this.plansApi.getPlan(plan.id)
+      .pipe(
+        switchMap((current) => {
+          if (this.savedPlanContextId() !== plan.id) {
+            return of(null);
+          }
+          const addedIds = requestedPlaces
+            .map((place) => place.id)
+            .filter((placeId) => !current.placeIds.includes(placeId));
+          if (addedIds.length === 0) {
+            this.savedPlanContext.set(current);
+            this.savedPlanFeedback.set({ message: 'Those places are already in this plan.', role: 'status' });
+            return of(null);
+          }
+          if (current.placeIds.length + addedIds.length > 12) {
+            this.savedPlanContext.set(current);
+            this.savedPlanFeedback.set({
+              message: 'This plan has a 12-place limit. Remove a place before adding another. Nothing was changed.',
+              role: 'alert',
+            });
+            return of(null);
+          }
+          const request: PlanUpsertRequest = {
+            name: current.name,
+            description: current.description,
+            cityId: current.cityId,
+            placeIds: [...current.placeIds, ...addedIds],
+          };
+          return this.plansApi.updatePlan(current.id, request).pipe(
+            map((updated) => {
+              if (!planMatchesRequest(updated, request)) {
+                throw new UnexpectedPlanResponseError();
+              }
+              return { plan: updated, addedCount: addedIds.length } satisfies SavedPlanAddResult;
+            }),
+          );
+        }),
+        catchError((error: unknown) => {
+          if (this.savedPlanContextId() === plan.id) {
+            const message = apiErrorMessage(error, 'The place could not be added to this plan. Your existing plan is unchanged.');
+            this.savedPlanFeedback.set({ message, role: 'alert' });
+            if (error instanceof HttpErrorResponse && error.status === 404) {
+              this.activePlanStore.clear(plan.id);
+              this.savedPlanContext.set(null);
+              this.savedPlanContextError.set('This saved plan is no longer available.');
+            }
+          }
+          return of(null);
+        }),
+        finalize(() => this.savedPlanAddPending.set(false)),
+        takeUntilDestroyed(this.destroyRef),
+      )
+      .subscribe((result) => {
+        if (result === null || this.savedPlanContextId() !== result.plan.id) {
+          return;
+        }
+        this.savedPlanContext.set(result.plan);
+        this.savedPlanFeedback.set({
+          message: `Added ${result.addedCount} place${result.addedCount === 1 ? '' : 's'} to ${result.plan.name}.`,
+          role: 'status',
+        });
+      });
   }
 
   private focusAfterRender(focus: () => void): void {
@@ -658,15 +781,30 @@ export class ExplorePage {
             };
         this.placeCityStates.update((states) => ({ ...states, [result.cityId]: next }));
         this.resolvePendingDiscoverForCity(result.cityId);
-        const pendingCityId = this.draftStore.pendingCityId();
-        if (pendingCityId === result.cityId) {
-          if (result.error !== null) {
-            this.draftStore.failValidation(result.error);
-          } else {
-            this.draftStore.validatePendingDraft(result.cityId, result.data ?? []);
-          }
-        }
+        this.validatePendingDraftWhenCatalogsReady();
       });
+  }
+
+  private validatePendingDraftWhenCatalogsReady(): void {
+    const pendingCityId = this.draftStore.pendingCityId();
+    if (pendingCityId === null) {
+      return;
+    }
+
+    const states = this.placeCityStates();
+    if (CITY_IDS.some((cityId) => states[cityId].status === 'loading')) {
+      return;
+    }
+
+    const unavailableCities = CITY_IDS.filter((cityId) => states[cityId].status === 'error');
+    if (unavailableCities.length > 0) {
+      this.draftStore.failValidation(
+        `Could not verify places from ${unavailableCities.map((cityId) => CITY_LABELS[cityId]).join(', ')}. Retry to restore this tab draft.`,
+      );
+      return;
+    }
+
+    this.draftStore.validatePendingDraft(pendingCityId, this.places());
   }
 
   private loadHubsForAllCities(): void {
@@ -848,40 +986,6 @@ export class ExplorePage {
     this.discoverState.set(stillLoading ? 'loading' : resolvedGroups.length > 0 ? 'loaded' : 'error');
   }
 
-  private validateStoredDraftForCity(cityId: CityId): void {
-    const pendingCityId = this.draftStore.pendingCityId();
-    if (
-      pendingCityId === null
-      || pendingCityId !== cityId
-      || this.validatingDraftCityId === pendingCityId
-    ) {
-      return;
-    }
-
-    this.validatingDraftCityId = pendingCityId;
-    this.draftStore.beginValidation();
-    this.placesApi
-      .getPlaces(cityId)
-      .pipe(
-        map((places) => ({ places, error: null }) as const),
-        catchError((error: unknown) =>
-          of({ places: null, error: apiErrorMessage(error, 'Could not validate the tab draft') } as const),
-        ),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe((result) => {
-        if (this.validatingDraftCityId !== pendingCityId) {
-          return;
-        }
-        this.validatingDraftCityId = null;
-        if (result.error !== null) {
-          this.draftStore.failValidation(result.error);
-          return;
-        }
-        this.draftStore.validatePendingDraft(pendingCityId, result.places);
-      });
-  }
-
   private checkHealth(): void {
     if (this.healthCheckPending) {
       return;
@@ -914,6 +1018,14 @@ function normalizeSearch(value: string): string {
 
 function asHtmlElement(value: EventTarget | null | undefined): HTMLElement | null {
   return typeof HTMLElement !== 'undefined' && value instanceof HTMLElement ? value : null;
+}
+
+function planMatchesRequest(plan: PlanResponse, request: PlanUpsertRequest): boolean {
+  return plan.name === request.name.trim()
+    && plan.description === request.description
+    && plan.cityId === request.cityId
+    && plan.placeIds.length === request.placeIds.length
+    && plan.placeIds.every((placeId, index) => placeId === request.placeIds[index]);
 }
 
 function describeHealthFailure(error: unknown): {

@@ -1,6 +1,10 @@
 import { DOCUMENT } from '@angular/common';
 import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
-import { Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { toSignal } from '@angular/core/rxjs-interop';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive } from '@angular/router';
+import { filter, map } from 'rxjs';
+import { focusMapRegion } from './focus-map-region';
+import { ActivePlanStore } from '../../core/services/active-plan.store';
 
 @Component({
   selector: 'app-main-navigation',
@@ -12,6 +16,11 @@ import { Router, RouterLink, RouterLinkActive } from '@angular/router';
 export class MainNavigationComponent {
   private readonly document = inject(DOCUMENT);
   private readonly router = inject(Router);
+  private readonly activePlanStore = inject(ActivePlanStore);
+  readonly mapActive = toSignal(this.router.events.pipe(
+    filter((event) => event instanceof NavigationEnd),
+    map(() => this.router.parseUrl(this.router.url).fragment === 'map-region'),
+  ), { initialValue: this.router.parseUrl(this.router.url).fragment === 'map-region' });
 
   get mapHref(): string {
     return this.router.serializeUrl(this.createMapUrlTree());
@@ -31,27 +40,17 @@ export class MainNavigationComponent {
 
     event.preventDefault();
     void this.router.navigateByUrl(this.createMapUrlTree()).then(
-      () => this.focusMapRegion(),
-      () => this.focusMapRegion(),
+      () => focusMapRegion(this.document),
+      () => focusMapRegion(this.document),
     );
   }
 
   private createMapUrlTree() {
+    const planId = this.router.parseUrl(this.router.url).queryParamMap.get('plan')
+      ?? this.activePlanStore.selectedId();
     return this.router.createUrlTree(['/'], {
       fragment: 'map-region',
+      queryParams: planId === null ? {} : { plan: planId },
     });
-  }
-
-  private focusMapRegion(): void {
-    const target = this.document.getElementById('map-region');
-    if (target === null) {
-      return;
-    }
-
-    target.focus({ preventScroll: true });
-    const reduceMotion = this.document.defaultView
-      ?.matchMedia?.('(prefers-reduced-motion: reduce)')
-      ?.matches ?? false;
-    target.scrollIntoView?.({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
   }
 }

@@ -27,13 +27,14 @@
       />
       @if (imageAttribution(); as attribution) {
         <figcaption class="place-detail__credit">
-          <a [href]="attribution.sourcePageUrl" target="_blank" rel="noopener noreferrer">
-            Photo by {{ attribution.author }}
-          </a>
-          <span aria-hidden="true">·</span>
-          <a [href]="attribution.licenseUrl" target="_blank" rel="noopener noreferrer">
-            {{ attribution.licenseLabel }}
-          </a>
+          <details>
+            <summary aria-label="Photo credits"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6" /><path d="M12 11v6m0-10v.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg></summary>
+            <div class="place-detail__credit-content">
+              <a [href]="attribution.sourcePageUrl" target="_blank" rel="noopener noreferrer">Photo by {{ attribution.author }}</a>
+              <a [href]="attribution.licenseUrl" target="_blank" rel="noopener noreferrer">{{ attribution.licenseLabel }}</a>
+              <p>{{ attribution.changeNotice }}</p>
+            </div>
+          </details>
         </figcaption>
       }
     } @else {
@@ -41,9 +42,6 @@
       <span>From the verified {{ cityName }} catalog</span>
     }
   </figure>
-  @if (imageAttribution(); as attribution) {
-    <p class="place-detail__changes">{{ attribution.changes }}</p>
-  }
   <h2 #heading id="place-detail-title" aria-describedby="place-detail-description" tabindex="-1">{{ place.name }}</h2>
   <p class="place-detail__description" id="place-detail-description">{{ place.shortDescription }}</p>
   <p class="place-detail__location">
@@ -86,11 +84,14 @@
     }
   </section>
   <div class="place-detail__actions">
+    @if (planFull && !draftContainsPlace) {
+      <p class="place-detail__limit" role="status">12-place limit reached. Remove a place before adding another.</p>
+    }
     @if (draftContainsPlace) {
       <span class="added-badge" role="status">Added</span>
     }
-    <button class="place-detail__add" type="button" (click)="requestAdd($event)">
-      Add to plan
+    <button class="place-detail__add" appPointerLight type="button" [disabled]="addDisabled" (click)="requestAdd($event)">
+      {{ draftContainsPlace ? 'Already added' : addActionLabel }}
     </button>
   </div>
 </aside>

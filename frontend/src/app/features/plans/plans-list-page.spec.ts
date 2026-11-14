@@ -10,6 +10,7 @@ import { PlansListPage } from './plans-list-page';
 const NEWER_PLAN: PlanResponse = {
   id: '614c6654-95e7-4ad6-8fd7-c1fc0b01e95e',
   name: 'Rotterdam by the water',
+  description: '',
   cityId: 'rotterdam',
   placeIds: ['rotterdam-node-2671299642', 'rotterdam-way-123456789'],
   createdAt: '2026-11-09T08:15:00Z',
@@ -19,6 +20,7 @@ const NEWER_PLAN: PlanResponse = {
 const OLDER_PLAN: PlanResponse = {
   id: '764c6654-95e7-4ad6-8fd7-c1fc0b01e95e',
   name: 'Amsterdam afternoon',
+  description: '',
   cityId: 'amsterdam',
   placeIds: ['amsterdam-node-34050791'],
   createdAt: '2026-11-08T09:00:00Z',
@@ -71,6 +73,7 @@ describe('PlansListPage', () => {
     expect(harness.routeNativeElement?.querySelector('nav[aria-label="Main navigation"] a[href="/plans"]')
       ?.getAttribute('aria-current')).toBe('page');
     expect(component.plans()).toEqual([NEWER_PLAN, OLDER_PLAN]);
+    expect(harness.routeNativeElement?.querySelector('.plans-back-places')?.getAttribute('href')).toBe('/');
     expect(harness.routeNativeElement?.querySelector('main')?.getAttribute('aria-busy')).toBe('false');
     http.expectNone('/api/plans/');
   });
@@ -85,6 +88,20 @@ describe('PlansListPage', () => {
     expect(harness.routeNativeElement?.querySelector('h1')?.textContent).toContain('Saved Plans');
     expect(harness.routeNativeElement?.querySelector('.plans-empty a[href="/plans/new"]')?.textContent)
       .toContain('Start your first plan');
+  });
+
+  it('explains six-plan capacity while keeping every existing plan available', async () => {
+    const { harness, request } = await startPage();
+    request.flush(Array.from({ length: 6 }, (_, index) => ({ ...NEWER_PLAN,
+      id: `614c6654-95e7-4ad6-8fd7-c1fc0b01e95${index}`, name: `Day ${index}` })));
+    await harness.fixture.whenStable();
+    harness.detectChanges();
+    expect(harness.routeNativeElement?.querySelectorAll('.saved-plan-card__open')).toHaveLength(6);
+    const limit = harness.routeNativeElement?.querySelector<HTMLButtonElement>('button[aria-describedby="plan-capacity-message"]');
+    expect(limit?.disabled).toBe(true);
+    expect(limit?.textContent).toContain('6 / 6 plans');
+    expect(harness.routeNativeElement?.querySelector('#plan-capacity-message')?.textContent).toContain('use an existing plan, or delete one');
+    expect(harness.routeNativeElement?.querySelector('.plans-list-heading a[href="/plans/new"]')).toBeNull();
   });
 
   it('shows an actionable load error and retries GET /api/plans', async () => {

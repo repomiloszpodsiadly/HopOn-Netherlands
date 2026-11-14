@@ -1,0 +1,84 @@
+.plans-list-heading__copy { min-width: 0; }
+.plans-title-row { display: flex; align-items: center; flex-wrap: wrap; gap: 12px 20px; }
+.plans-title-row h1 { margin-block: 6px 10px; }
+.plans-title-row h1 em { position: relative; }
+.plans-title-row h1 em::after { position: absolute; right: 2px; bottom: -3px; left: 8px; height: 2px; border-radius: 50%; background: linear-gradient(90deg, #cc9869, #e9d5b6); content: ''; }
+.plans-back-places { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; gap: 8px; padding: 0 13px; border: 1px solid #dfd1bb; border-radius: 999px; background: #fffcf6; color: #66634e; font-size: 12px; font-weight: 650; text-decoration: none; transition: background-color 180ms ease, border-color 180ms ease; }
+.plans-back-places svg { width: 16px; height: 16px; }
+.plans-back-places:hover { border-color: #bca682; background: #f6eddf; }
+.plans-list-heading > .plans-button { gap: 10px; }
+.plans-list-heading > .plans-button > span { font-size: 24px; font-weight: 400; line-height: 1; }
+.plans-collection-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; color: #746e5d; font-size: 12px; }
+.plans-collection-heading p { margin: 0; font-weight: 700; letter-spacing: .4px; }
+.plans-collection-heading > span { padding: 5px 10px; border: 1px solid #e9ddca; border-radius: 999px; background: #faf3e7; font-variant-numeric: tabular-nums; }
+.plans-collection-heading i { padding-inline: 4px; color: #ad916d; font-style: normal; }
+
+.saved-plan-list { gap: 18px; padding: 6px; }
+.saved-plan-card { display: block; padding: 0; border-color: #e4d4bd; border-radius: 22px; background: #fffcf6; box-shadow: 0 4px 15px rgb(115 85 46 / 7%); }
+.saved-plan-card::before { content: none; }
+.saved-plan-card__open { display: grid; width: 100%; height: 100%; min-height: 236px; grid-template-columns: 140px minmax(0, 1fr); grid-template-rows: minmax(176px, 1fr) auto; grid-template-areas: 'cover body' 'dates dates'; align-items: stretch; justify-items: stretch; gap: 0; border-radius: inherit; overflow: hidden; }
+.saved-plan-card__open:focus-visible { outline: 3px solid var(--color-focus); outline-offset: -4px; }
+.saved-plan-card__cover { position: relative; grid-area: cover; min-height: 176px; align-self: stretch; overflow: hidden; border-right: 1px solid #e4d4bd; background: radial-gradient(circle at 100% 0, #fff7e9, transparent 60%), #f0e2ce; }
+.saved-plan-card[data-city='rotterdam'] .saved-plan-card__cover { background: radial-gradient(circle at 100% 0, #f9f7e9, transparent 60%), #e4e9dd; }
+.saved-plan-card[data-city='utrecht'] .saved-plan-card__cover { background: radial-gradient(circle at 100% 0, #fff3e8, transparent 60%), #eee0d6; }
+.saved-plan-card__cover img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; transition: transform 500ms cubic-bezier(.2, .8, .2, 1); }
+.saved-plan-card__city { position: absolute; z-index: 1; top: 14px; left: 12px; padding: 6px 8px; border: 1px solid rgb(212 195 166 / 60%); background: rgb(255 251 242 / 90%); color: #68604b; font-size: 10px; letter-spacing: .6px; white-space: nowrap; }
+.saved-plan-card__body { display: flex; grid-area: body; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; padding: 16px 18px; }
+.saved-plan-card__eyebrow { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 10px; color: #776548; font-size: 10px; font-weight: 700; letter-spacing: 1px; }
+.saved-plan-card__arrow { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid #e5d7bd; border-radius: 50%; background: #f2e8d5; color: #6b654e; font-size: 20px; font-weight: 400; line-height: 1; transition: background-color 180ms ease, color 180ms ease, transform 280ms ease; }
+.saved-plan-card__open h2 { display: -webkit-box; width: 100%; min-height: 2.24em; margin: 0; overflow: hidden; overflow-wrap: anywhere; font-size: 26px; line-height: 1.12; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.saved-plan-card__count { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; background: #f4eedf; color: #65634e; font-size: 12px; }
+.saved-plan-card__count svg { width: 15px; height: 15px; }
+.saved-plan-card__hint { margin: 0; color: #6c7061; font-size: 12px; line-height: 1.4; }
+.saved-plan-card__dates { display: grid; grid-area: dates; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 12px 18px; border-top: 1px dashed #ddcdb5; background: #faf4e9; }
+.saved-plan-card__dates div { display: grid; justify-content: start; gap: 3px; }
+.saved-plan-card__dates dt { color: #746850; font-size: 11px; letter-spacing: .4px; text-transform: uppercase; }
+.saved-plan-card__dates dd { min-width: 0; color: #6e6b59; font-size: 12px; text-align: left; }
+.saved-plan-card:hover { transform: none; border-color: #ccb38d; box-shadow: 0 9px 25px rgb(115 85 46 / 12%); }
+.saved-plan-card__open:is(:hover, :focus-visible) .saved-plan-card__arrow { background: #68634d; color: #fffaf1; }
+.saved-plan-card__arrow svg { display: block; width: 18px; height: 18px; }
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .saved-plan-card:hover { transform: translateY(-2px); }
+  .saved-plan-card:hover .saved-plan-card__cover img { transform: translateY(-3px); }
+  .saved-plan-card:hover .saved-plan-card__arrow { transform: translate(1px, -1px); }
+}
+
+@media (max-width: 1100px) {
+  .saved-plan-card__open { grid-template-columns: 112px minmax(0, 1fr); }
+  .saved-plan-card__body { padding-inline: 14px; }
+  .saved-plan-card__open h2 { font-size: 23px; }
+  .saved-plan-card__city { left: 9px; padding-inline: 6px; font-size: 9px; }
+}
+
+@media (max-width: 760px) {
+  .plans-title-row { flex-wrap: nowrap; gap: 10px; }
+  .plans-title-row h1 { font-size: 30px; white-space: nowrap; }
+  .plans-back-places { gap: 6px; padding-inline: 10px; font-size: 11px; }
+  .plans-back-places svg { width: 14px; height: 14px; }
+  .plans-list-heading > .plans-button { min-width: 0; min-height: 44px; }
+  .plans-collection-heading { margin-bottom: 12px; font-size: 11px; }
+  .saved-plan-list { gap: 14px; }
+  .saved-plan-card__open { min-height: 220px; grid-template-columns: 104px minmax(0, 1fr); }
+  .saved-plan-card__body { padding: 12px; gap: 7px; }
+  .saved-plan-card__eyebrow { font-size: 9px; letter-spacing: .5px; }
+  .saved-plan-card__arrow { width: 26px; height: 26px; font-size: 18px; }
+  .saved-plan-card__open h2 { font-size: 23px; }
+  .saved-plan-card__hint { font-size: 11px; }
+  .saved-plan-card__dates { padding: 11px 14px; }
+}
+
+@media (max-width: 390px) {
+  .plans-title-row h1 { font-size: 28px; }
+  .plans-back-places { padding-inline: 8px; }
+}
+.plans-capacity-notice {
+  margin: 0;
+  padding: 12px 16px;
+  border: 1px solid #e4d4bb;
+  border-radius: 14px;
+  background: #f7efdf;
+  color: #6e5838;
+  font-size: 14px;
+  line-height: 1.5;
+}

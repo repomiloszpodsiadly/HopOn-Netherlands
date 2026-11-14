@@ -1,9 +1,11 @@
 import { DOCUMENT } from '@angular/common';
 import { Injectable, inject, signal } from '@angular/core';
 import { CityId, PlaceDto, isCityId } from '../models/catalog.models';
-import { DraftAddResult, DraftCityConflict, DraftPlan } from '../models/draft-plan.models';
+import { DraftAddResult, DraftPlan } from '../models/draft-plan.models';
+import { PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH } from '../models/plan.models';
 
 export const DRAFT_PLAN_STORAGE_KEY = 'hopon:draft:v1';
+const DEFAULT_PLAN_NAME = 'My day out';
 
 @Injectable({ providedIn: 'root' })
 export class DraftPlanStore {
@@ -13,7 +15,6 @@ export class DraftPlanStore {
   readonly draft = signal<DraftPlan | null>(null);
   readonly isValidating = signal(false);
   readonly validationError = signal<string | null>(null);
-  readonly cityConflict = signal<DraftCityConflict | null>(null);
   readonly restoreMessage = signal<string | null>(null);
   readonly storageUnavailable = signal(false);
   private readonly storage = this.resolveStorage();
@@ -26,14 +27,15 @@ export class DraftPlanStore {
     return this.pendingDraft?.cityId ?? null;
   }
 
-  initializeDraft(cityId: CityId, cityName: string): boolean {
-    if (this.pendingDraft !== null || this.draft() !== null || this.cityConflict() !== null) {
+  initializeDraft(cityId: CityId): boolean {
+    if (this.pendingDraft !== null || this.draft() !== null) {
       return false;
     }
     this.commit({
       schemaVersion: 1,
       cityId,
-      name: `${cityName} plan`,
+      name: DEFAULT_PLAN_NAME,
+      description: '',
       placeIds: [],
       updatedAt: new Date().toISOString(),
     });
@@ -46,6 +48,15 @@ export class DraftPlanStore {
       return false;
     }
     this.commit({ ...existing, name, updatedAt: new Date().toISOString() });
+    return true;
+  }
+
+  updateDescription(description: string): boolean {
+    const existing = this.draft();
+    if (existing === null || this.pendingDraft !== null || existing.description === description) {
+      return false;
+    }
+    this.commit({ ...existing, description, updatedAt: new Date().toISOString() });
     return true;
   }
 
@@ -78,19 +89,19 @@ export class DraftPlanStore {
     return true;
   }
 
-  requestCityChange(cityId: CityId, cityName: string): boolean {
-    if (this.pendingDraft !== null || this.cityConflict() !== null) {
+  requestCityChange(cityId: CityId): boolean {
+    if (this.pendingDraft !== null) {
       return false;
     }
     const existing = this.draft();
     if (existing === null) {
-      return this.initializeDraft(cityId, cityName);
+      return this.initializeDraft(cityId);
     }
     if (existing.cityId === cityId) {
       return true;
     }
-    this.cityConflict.set({ cityId, cityName, placeIds: [] });
-    return false;
+    this.commit({ ...existing, cityId, updatedAt: new Date().toISOString() });
+    return true;
   }
 
   clearAfterSuccessfulSave(expectedDraft: DraftPlan): boolean {
@@ -101,8 +112,16 @@ export class DraftPlanStore {
     this.removeStoredDraft();
     this.validationError.set(null);
     this.restoreMessage.set(null);
-    this.cityConflict.set(null);
     return true;
+  }
+
+  prepareAutosave(): DraftPlan | null {
+    const draft = this.draft();
+    if (draft === null || this.pendingDraft !== null) return null;
+    if (draft.autosaveId) return draft;
+    const next = { ...draft, autosaveId: globalThis.crypto.randomUUID() };
+    this.commit(next);
+    return next;
   }
 
   beginValidation(): void {
@@ -118,9 +137,7 @@ export class DraftPlanStore {
       return false;
     }
 
-    const validIds = new Set(
-      catalog.filter((place) => place.cityId === cityId).map((place) => place.id),
-    );
+    const validIds = new Set(catalog.map((place) => place.id));
     const placeIds = unique(pending.placeIds).filter((placeId) => validIds.has(placeId));
     if (placeIds.length !== pending.placeIds.length) {
       this.restoreMessage.set('Places missing from the current catalog were removed from this tab draft.');
@@ -142,8 +159,6 @@ export class DraftPlanStore {
   }
 
   addPlaces(
-    cityId: CityId,
-    cityName: string,
     requestedPlaceIds: readonly string[],
     catalog: readonly PlaceDto[],
   ): DraftAddResult {
@@ -151,32 +166,38 @@ export class DraftPlanStore {
       return { status: 'validation-pending' };
     }
 
-    const validIds = new Set(
-      catalog.filter((place) => place.cityId === cityId).map((place) => place.id),
-    );
+    const placesById = new Map(catalog.map((place) => [place.id, place]));
+    const validIds = new Set(placesById.keys());
     const placeIds = unique(requestedPlaceIds).filter((placeId) => validIds.has(placeId));
     if (placeIds.length === 0) {
       return { status: 'no-verified-places' };
     }
-
-    const existing = this.draft();
-    if (existing !== null && existing.cityId !== cityId) {
-      this.cityConflict.set({ cityId, cityName, placeIds });
-      return { status: 'city-conflict' };
+    if (placeIds.length > 12) {
+      return { status: 'limit-reached' };
     }
 
+    const existing = this.draft();
     const existingIds = new Set(existing?.placeIds ?? []);
     const newIds = placeIds.filter((placeId) => !existingIds.has(placeId));
     const alreadyPresentCount = placeIds.length - newIds.length;
     if (newIds.length === 0) {
       return { status: 'already-added' };
     }
+    if ((existing?.placeIds.length ?? 0) + newIds.length > 12) {
+      return { status: 'limit-reached' };
+    }
+
+    const startingCityId = existing?.cityId ?? placesById.get(newIds[0] ?? '')?.cityId;
+    if (startingCityId === undefined) {
+      return { status: 'no-verified-places' };
+    }
 
     const nextDraft: DraftPlan = existing === null
       ? {
           schemaVersion: 1,
-          cityId,
-          name: `${cityName} plan`,
+          cityId: startingCityId,
+          name: DEFAULT_PLAN_NAME,
+          description: '',
           placeIds: newIds,
           updatedAt: new Date().toISOString(),
         }
@@ -187,28 +208,6 @@ export class DraftPlanStore {
         };
     this.commit(nextDraft);
     return { status: 'added', addedCount: newIds.length, alreadyPresentCount };
-  }
-
-  keepExistingDraft(): void {
-    this.cityConflict.set(null);
-  }
-
-  startDraftForRequestedCity(): boolean {
-    const conflict = this.cityConflict();
-    if (conflict === null) {
-      return false;
-    }
-    this.commit({
-      schemaVersion: 1,
-      cityId: conflict.cityId,
-      name: `${conflict.cityName} plan`,
-      placeIds: conflict.placeIds,
-      updatedAt: new Date().toISOString(),
-    });
-    this.cityConflict.set(null);
-    this.validationError.set(null);
-    this.restoreMessage.set(null);
-    return true;
   }
 
   private restoreFromSession(): void {
@@ -226,7 +225,7 @@ export class DraftPlanStore {
         this.restoreMessage.set('An invalid tab draft was cleared.');
         return;
       }
-      this.pendingDraft = { ...parsed, placeIds: unique(parsed.placeIds) };
+      this.pendingDraft = { ...parsed, description: parsed.description ?? '', placeIds: unique(parsed.placeIds) };
       this.isValidating.set(true);
     } catch {
       this.removeStoredDraft();
@@ -269,7 +268,9 @@ export class DraftPlanStore {
   }
 }
 
-function isDraftPlan(value: unknown): value is DraftPlan {
+type StoredDraftPlan = Omit<DraftPlan, 'description'> & Readonly<{ description?: string }>;
+
+function isDraftPlan(value: unknown): value is StoredDraftPlan {
   if (typeof value !== 'object' || value === null) {
     return false;
   }
@@ -277,10 +278,14 @@ function isDraftPlan(value: unknown): value is DraftPlan {
   return candidate['schemaVersion'] === 1
     && isCityId(candidate['cityId'] as string | undefined)
     && typeof candidate['name'] === 'string'
-    && candidate['name'].length <= 80
+    && candidate['name'].length <= PLAN_NAME_MAX_LENGTH
+    && (candidate['description'] === undefined || typeof candidate['description'] === 'string'
+      && candidate['description'].length <= PLAN_DESCRIPTION_MAX_LENGTH)
     && Array.isArray(candidate['placeIds'])
     && candidate['placeIds'].every((placeId) => typeof placeId === 'string' && placeId.length > 0)
     && typeof candidate['updatedAt'] === 'string'
+    && (candidate['autosaveId'] === undefined || typeof candidate['autosaveId'] === 'string'
+      && /^[\da-f]{8}-(?:[\da-f]{4}-){3}[\da-f]{12}$/i.test(candidate['autosaveId']))
     && Number.isFinite(Date.parse(candidate['updatedAt']));
 }
 

@@ -16,8 +16,8 @@
 | 0–10s | Open Explore and show the combined Amsterdam, Rotterdam and Utrecht catalog and map. | “HopOn brings three Dutch cities into one shared place guide.” |
 | 10–25s | Pan and zoom the shared map between the city areas. Search for “Royal Palace” and point out Amsterdam on its place card. | “Search and filters work across the three-city catalog, and every card names its city.” |
 | 25–40s | Open Royal Palace details; point out the selected map location, photo credit and approximate nearby hub information. | “The map uses MapLibre with OpenFreeMap and OpenStreetMap attribution; hub distances are approximate, not transit directions.” |
-| 40–65s | Add two Amsterdam places to the tab draft, open the plan editor, enter the disposable name and save. Show the saved detail page. | “A draft belongs to this tab. A saved plan contains places from one city and is stored by Spring in in-memory H2.” |
-| 65–80s | Reorder a stop, save, refresh to confirm the order, then delete only the disposable demo plan. | “The API validates city and place IDs and preserves the chosen order. H2 survives refresh while Spring runs.” |
+| 40–65s | Add places from two cities and show that the first addition automatically creates the current saved plan. Choose Review current plan, give it a disposable name and save changes. Use Explore map to add a place from the third city. | “Map additions save automatically to the current plan. A plan can bring places from all three cities together and is stored by Spring in in-memory H2.” |
+| 65–80s | Return to the saved plan, reorder a stop, save, refresh to confirm the order, then delete only the disposable demo plan. | “The API validates supported city and place IDs and preserves the chosen order. H2 survives refresh while Spring runs.” |
 | 80–90s | Show the Angular/Spring boundary and the current release evidence section. | “Angular 22 handles the interface; Spring Boot exposes the REST API; services and repositories back H2. The evidence ledger separates automated checks from phone and live-map work that has not been run.” |
 
 ## Map-resource fallback

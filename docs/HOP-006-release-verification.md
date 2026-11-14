@@ -1,5 +1,7 @@
 # HOP-006 Release Verification
 
+This is the historical HOP-006 evidence ledger. Current HOP-007 planner behavior and its later verification are recorded in [the design and validation notes](HOP-007-design-notes.md).
+
 - **Audit date:** 2026-11-12 (Europe/Warsaw)
 - **Branch:** `feat/HOP-006-final-qa-demo` (the prompt pack names `chore/HOP-006-final-qa-demo`)
 - **HEAD at evidence capture:** `2f886d00c833b0b61928a3168d6406e14ee14f50`
@@ -88,7 +90,7 @@ At code-test capture, the worktree contained the Explore, map-test, plan-test, n
 | HOP6-001 — stale Angular and Playwright contracts | Full unit and E2E suites pass against the current working tree; all-city Explore and current navigation are covered. |
 | HOP6-003 / HOP6-006 — per-city hub failure and retry truthfulness | Unit and Playwright recovery scenarios pass; failed and empty hub results are distinguished. |
 | HOP6-004 — progressive multi-city loading | Delayed-city/503/retry E2E passes; successful city catalogs stay usable. |
-| HOP6-005 — obsolete desktop demo | Desktop demo now uses the shared map and single-city saved plan; Discover is described only at supported narrower widths. |
+| HOP6-005 — obsolete desktop demo | Desktop demo now uses the shared map and a cross-city plan draft; Discover is described only at supported narrower widths. |
 | HOP6-006 — CSS budgets | Production build passes without component-style budget warnings; the 18/24 kB limits remain unchanged. |
 | Prior HOP6-005 — mixed-city card context | Cards show the city name; responsive E2E and screenshot review pass. |
 | Prior HOP6-008/009 — stale PID and map-error promises | Manual instructions identify port owners dynamically; README distinguishes isolated resource failures from startup/WebGL fallback. |
@@ -106,7 +108,7 @@ No additional proven application regression was found in this gate.
 | Frontend unit suite | From `frontend/`: `npm.cmd run test` | **PASS**, exit 0 | 12 test files; 109 tests passed. |
 | Production build | From `frontend/`: `npm.cmd run build` | **PASS**, exit 0 | Initial chunks: 443.01 kB raw / 102.57 kB estimated transfer; global styles: 79.08 kB raw / 10.35 kB estimated transfer; lazy MapLibre: 1.07 MB raw / 238.78 kB transfer. Component CSS budgets remain 18 kB warning / 24 kB error, with no component-style budget warning. These are bundle sizes, not runtime performance measurements. |
 | Spring process used by E2E and live map | `netstat -ano -p tcp`; `Invoke-RestMethod http://127.0.0.1:8080/api/health` | **PASS** | Listener was `127.0.0.1:8080 LISTENING`; health returned UP. This is the helper-started local process, not a physical-phone/LAN check. |
-| Full real Spring/H2 Playwright suite | From `frontend/`: `npm.cmd run test:e2e` with Spring on loopback port 8080 | **PASS**, exit 0 | 26 passed, 1 skipped in 4.6 minutes. The skipped test is the opt-in live-map smoke, run separately below. Coverage includes shared Explore, city search/selection, Discover at supported widths, desktop Discover absence, failure/retry, cross-city draft choice, 13-item plan behavior, real H2 CRUD, save errors, refresh, map fallback and responsive screens. |
+| Full real Spring/H2 Playwright suite | From `frontend/`: `npm.cmd run test:e2e` with Spring on loopback port 8080 | **PASS**, exit 0 | 26 passed, 1 skipped in 4.6 minutes. The skipped test is the opt-in live-map smoke, run separately below. Coverage includes shared Explore, city search/selection, Discover at supported widths, desktop Discover absence, failure/retry, cross-city draft additions, 13-item plan behavior, real H2 CRUD, save errors, refresh, map fallback and responsive screens. |
 | Opt-in live style smoke | `$env:HOPON_LIVE_MAP_SMOKE='1'; npm.cmd run test:e2e -- --grep 'real OpenFreeMap'` | **PASS**, exit 0 | 1 browser test. Liberty style HTTP 200 (43,311 bytes), visible canvas, MapLibre ready. This test alone does not assert tile/glyph delivery. |
 | Live tile/glyph browser probe | Angular `ng serve --host 127.0.0.1 --port 4200`; Chromium at 1440×900, real OpenFreeMap, card selection, pan and wheel zoom | **PASS** | Style: 200, 43,311 bytes. 20 non-empty vector PBF tile responses and 3 non-empty glyph PBF responses all returned 200. Visible basemap, markers, selected Royal Palace details and OpenFreeMap/OpenStreetMap attribution; zero console errors and page errors. Screenshot: `frontend/test-results/hop006-e-live-map.png`. Desktop browser only. |
 | Isolated H2 restart reset | On previously free loopback port 8081: `.\gradlew.bat bootRun --args='--server.port=8081'`; POST plan (201); stop only that process; restart built JAR on 8081; GET `/api/plans` | **PASS** | Same-process GET returned 1 saved plan; after isolated process restart GET returned 0. Port 8080 stayed healthy and was not stopped or modified. |

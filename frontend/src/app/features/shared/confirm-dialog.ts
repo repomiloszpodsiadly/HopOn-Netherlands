@@ -8,11 +8,12 @@ import { ChangeDetectionStrategy, Component, ElementRef, EventEmitter, Input, Ou
 })
 export class ConfirmDialogComponent {
   @Input() dialogId = 'confirm-dialog';
-  @Input() title = 'Confirm action';
+  @Input() heading = 'Confirm action';
   @Input() description = '';
   @Input() confirmLabel = 'Confirm';
   @Input() cancelLabel = 'Cancel';
   @Input() busy = false;
+  @Input() destructive = false;
   @Input() message: string | null = null;
   @Output() readonly confirmed = new EventEmitter<void>();
   @Output() readonly cancelled = new EventEmitter<void>();

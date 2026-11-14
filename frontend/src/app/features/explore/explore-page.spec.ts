@@ -7,6 +7,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { TestBed } from '@angular/core/testing';
 import { CityDto, MobilityHubDto, PlaceDto } from '../../core/models/catalog.models';
 import { DRAFT_PLAN_STORAGE_KEY } from '../../core/services/draft-plan.store';
+import { ACTIVE_PLAN_STORAGE_KEY } from '../../core/services/active-plan.store';
 import { MapViewportComponent } from './map-viewport';
 import { ExplorePage } from './explore-page';
 
@@ -21,7 +22,6 @@ class MapViewportStub {
   @Input() selectedPlaceId: string | null = null;
   @Input() discoverPlaceIds: readonly string[] = [];
   @Output() readonly placeSelected = new EventEmitter<string>();
-  @Output() readonly browsePlaces = new EventEmitter<void>();
 }
 
 const CITIES: readonly CityDto[] = [
@@ -149,8 +149,17 @@ function flushDiscover(
   }
 }
 
+function confirmAutosave(http: HttpTestingController) {
+  const request = http.expectOne(candidate => candidate.url.endsWith('/autosave'));
+  const plan = { ...request.request.body, id: request.request.url.split('/')[3],
+    createdAt: '2026-11-14T12:00:00Z', updatedAt: '2026-11-14T12:00:00Z' };
+  request.flush(plan);
+  return plan;
+}
+
 describe('ExplorePage', () => {
   beforeEach(async () => {
+    sessionStorage.removeItem(ACTIVE_PLAN_STORAGE_KEY);
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -166,6 +175,7 @@ describe('ExplorePage', () => {
   });
 
   afterEach(() => {
+    sessionStorage.removeItem(ACTIVE_PLAN_STORAGE_KEY);
     TestBed.inject(HttpTestingController).verify();
     sessionStorage.removeItem(DRAFT_PLAN_STORAGE_KEY);
   });
@@ -261,7 +271,7 @@ describe('ExplorePage', () => {
     expect(featuredCard?.getAttribute('aria-pressed')).toBe('false');
     expect(image?.getAttribute('src')).toBe(example.imagePath);
     expect(image?.getAttribute('srcset')).toContain(`${example.smallPath} 640w`);
-    expect(image?.getAttribute('sizes')).toContain('100vw');
+    expect(image?.getAttribute('sizes')).toBe('(max-width: 760px) 96px, 144px');
     expect(image?.getAttribute('width')).toBe('1280');
     expect(image?.getAttribute('height')).toBe('960');
     expect(image?.getAttribute('loading')).toBe('eager');
@@ -326,52 +336,6 @@ describe('ExplorePage', () => {
     expect(TestBed.inject(Router).url).toBe('/#map-region');
     expect(document.activeElement).toBe(target);
     expect(scrollIntoView).toHaveBeenCalledTimes(2);
-  });
-
-  it.each([
-    { reducedMotion: true, behavior: 'auto' },
-    { reducedMotion: false, behavior: 'smooth' },
-  ])('browses places with $behavior scrolling for reducedMotion=$reducedMotion', async ({ reducedMotion, behavior }) => {
-    const { harness, component } = await startPage('/');
-    harness.detectChanges();
-
-    const placeResults = harness.routeNativeElement?.querySelector('.place-results') as HTMLElement;
-    const scrollIntoView = vi.fn();
-    const matchMedia = vi.fn().mockReturnValue({ matches: reducedMotion });
-    Object.defineProperty(placeResults, 'scrollIntoView', { value: scrollIntoView, configurable: true });
-    vi.stubGlobal('matchMedia', matchMedia);
-
-    try {
-      component.browsePlaces();
-
-      expect(document.activeElement).toBe(placeResults);
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior, block: 'start' });
-      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  it('routes the map Browse Places event through the motion-aware page handler', async () => {
-    const { harness } = await startPage('/');
-    harness.detectChanges();
-
-    const placeResults = harness.routeNativeElement?.querySelector('.place-results') as HTMLElement;
-    const scrollIntoView = vi.fn();
-    const matchMedia = vi.fn().mockReturnValue({ matches: true });
-    Object.defineProperty(placeResults, 'scrollIntoView', { value: scrollIntoView, configurable: true });
-    vi.stubGlobal('matchMedia', matchMedia);
-
-    try {
-      const map = harness.routeDebugElement!.query(By.directive(MapViewportStub)).componentInstance as MapViewportStub;
-      map.browsePlaces.emit();
-
-      expect(document.activeElement).toBe(placeResults);
-      expect(scrollIntoView).toHaveBeenCalledWith({ behavior: 'auto', block: 'start' });
-      expect(matchMedia).toHaveBeenCalledWith('(prefers-reduced-motion: reduce)');
-    } finally {
-      vi.unstubAllGlobals();
-    }
   });
 
   it.each([FEATURED_PLACES[1], FEATURED_PLACES[2]])(
@@ -554,7 +518,7 @@ describe('ExplorePage', () => {
     expect(harness.routeNativeElement?.querySelectorAll('.place-card')).toHaveLength(45);
   });
 
-  it('shows the temporary draft count and keeps its city when linking to the editor', async () => {
+  it('shows a shared cross-city draft count and keeps its starting city when linking to the editor', async () => {
     const { harness, component } = await startPage('/', { places: { amsterdam: AMSTERDAM_PLACES } });
     harness.detectChanges();
 
@@ -564,29 +528,29 @@ describe('ExplorePage', () => {
     const editorLink = harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement;
     expect(count?.textContent).toContain('0');
     expect(count?.textContent).toContain('stops');
-    expect(harness.routeNativeElement?.textContent).toContain('Plan a day in one city.');
+    expect(harness.routeNativeElement?.textContent).toContain('Plan a day across Amsterdam, Rotterdam and Utrecht.');
     expect(editorLink.getAttribute('href')).toBe('/plans/new?city=amsterdam');
     expect(draftPanel).not.toBeNull();
     expect(placeResults).not.toBeNull();
     expect(placeResults!.closest('.explore-sidebar')).not.toBeNull();
     expect(draftPanel!.closest('.map-column')).not.toBeNull();
 
-    component.draftStore.initializeDraft('amsterdam', 'Amsterdam');
-    component.draftStore.addPlaces('amsterdam', 'Amsterdam', ['amsterdam-museum'], AMSTERDAM_PLACES);
+    component.draftStore.initializeDraft('amsterdam');
+    component.draftStore.addPlaces(['amsterdam-museum'], AMSTERDAM_PLACES);
     harness.detectChanges();
 
     expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('1');
     expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('stop');
-    expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft');
-    expect(harness.routeNativeElement?.textContent).toContain('Temporary tab draft for Amsterdam');
-    expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
+    expect(draftPanel?.textContent).not.toContain('Temporary');
+    expect(draftPanel?.querySelector('.draft-name')?.textContent).toContain('My day out');
+    expect(draftPanel?.textContent).toContain('Review current plan');
     expect(component.draftEditorCityId()).toBe('amsterdam');
     expect((harness.routeNativeElement?.querySelector('.draft-editor-link') as HTMLAnchorElement)
       .getAttribute('href')).toBe('/plans/new?city=amsterdam');
   });
 
   it('opens the same place from a card or map marker and restores focus on Escape', async () => {
-    const { harness } = await startPage('/', { places: { amsterdam: AMSTERDAM_PLACES } });
+    const { harness, http } = await startPage('/', { places: { amsterdam: AMSTERDAM_PLACES } });
     harness.detectChanges();
 
     const firstCard = harness.routeNativeElement?.querySelector('.place-card') as HTMLButtonElement;
@@ -611,7 +575,11 @@ describe('ExplorePage', () => {
     expect(page.draftStore.draft()?.placeIds).toEqual(['amsterdam-museum']);
     expect(harness.routeNativeElement?.querySelector('.added-badge')?.textContent).toContain('Added');
     addPlace.click();
-    expect(page.draftFeedback()).toBe('Already in plan.');
+    expect(page.autosave.pending()).toBe(true);
+    const saved = confirmAutosave(http);
+    await harness.fixture.whenStable();
+    expect(page.savedPlanContext()?.id).toBe(saved.id);
+    expect(page.draftStore.draft()).toBeNull();
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     await harness.fixture.whenStable();
@@ -718,9 +686,10 @@ describe('ExplorePage', () => {
     addAmsterdam.click();
     expect(component.draftStore.draft()?.placeIds).toEqual(['museumplein', 'van-gogh']);
     harness.detectChanges();
-    expect(harness.routeNativeElement?.textContent).toContain('not saved to the server');
+    expect(harness.routeNativeElement?.querySelector('.draft-editor-link')?.textContent).toContain('Review current plan');
     addAmsterdam.click();
-    expect(component.draftFeedback()).toBe('Already in plan.');
+    expect(component.autosave.pending()).toBe(true);
+    confirmAutosave(http);
 
     selectedTheme.click();
     await harness.fixture.whenStable();
@@ -935,34 +904,29 @@ describe('ExplorePage', () => {
     expect(TestBed.inject(Router).url).toBe('/');
   });
 
-  it('asks before replacing a draft when adding a place from another city', async () => {
-    const { harness, component } = await startPage('/');
+  it('autosaves the first place and adds all three cities to the same saved plan', async () => {
+    const { harness, component, http } = await startPage('/');
     component.addPlaceToPlan('amsterdam-museum');
-    harness.detectChanges();
-    component.addPlaceToPlan('rotterdam-museum');
-    harness.detectChanges();
-
-    expect(component.draftStore.draft()?.cityId).toBe('amsterdam');
-    expect(harness.routeNativeElement?.querySelector('#draft-conflict-title')).toBeTruthy();
-    const keep = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
-      .find((button) => button.textContent?.trim() === 'Keep existing') as HTMLButtonElement;
-    keep.click();
+    let saved = confirmAutosave(http);
     await harness.fixture.whenStable();
-    expect(component.draftStore.draft()).toMatchObject({
+    for (const id of ['rotterdam-museum', 'utrecht-museum']) {
+      component.addPlaceToPlan(id);
+      http.expectOne(`/api/plans/${saved.id}`).flush(saved);
+      const update = http.expectOne(`/api/plans/${saved.id}`);
+      expect(update.request.method).toBe('PUT');
+      saved = { ...saved, ...update.request.body };
+      update.flush(saved);
+      await harness.fixture.whenStable();
+    }
+    harness.detectChanges();
+    expect(component.draftStore.draft()).toBeNull();
+    expect(component.savedPlanContext()).toMatchObject({
       cityId: 'amsterdam',
-      placeIds: ['amsterdam-museum'],
+      placeIds: ['amsterdam-museum', 'rotterdam-museum', 'utrecht-museum'],
     });
-
-    component.addPlaceToPlan('rotterdam-museum');
-    harness.detectChanges();
-    const replace = Array.from(harness.routeNativeElement?.querySelectorAll('button') ?? [])
-      .find((button) => button.textContent?.includes('Start new for Rotterdam')) as HTMLButtonElement;
-    replace.click();
-    await harness.fixture.whenStable();
-    expect(component.draftStore.draft()).toMatchObject({
-      cityId: 'rotterdam',
-      placeIds: ['rotterdam-museum'],
-    });
+    expect(harness.routeNativeElement?.querySelector('#draft-conflict-title')).toBeNull();
+    expect(component.hasPlaceInDraft('rotterdam-museum')).toBe(true);
+    expect(harness.routeNativeElement?.querySelector('.draft-count')?.textContent).toContain('3');
   });
 
   it('shows a catalog error and retries all three city requests', async () => {

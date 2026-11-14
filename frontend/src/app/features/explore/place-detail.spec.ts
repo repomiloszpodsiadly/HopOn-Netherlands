@@ -27,11 +27,12 @@ describe('PlaceDetailComponent image attribution', () => {
     fixture.detectChanges();
   });
 
-  it('renders responsive local imagery and readable source and license credit', () => {
+  it('renders responsive local imagery with source and license in a closed disclosure', () => {
     const image = fixture.nativeElement.querySelector('img') as HTMLImageElement | null;
     const credit = fixture.nativeElement.querySelector('.place-detail__credit') as HTMLElement | null;
     const visual = fixture.nativeElement.querySelector('.place-detail__visual') as HTMLElement | null;
-    const changes = fixture.nativeElement.querySelector('.place-detail__changes') as HTMLElement | null;
+    const disclosure = credit?.querySelector('details');
+    const notice = credit?.querySelector('.place-detail__credit-content p');
     const links = credit?.querySelectorAll('a');
 
     expect(image?.getAttribute('src')).toBe('/assets/catalog/royal-palace-amsterdam.jpg');
@@ -46,8 +47,10 @@ describe('PlaceDetailComponent image attribution', () => {
     expect(links?.[1].textContent).toContain('CC BY-SA 4.0');
     expect(links?.[1].getAttribute('href')).toBe('https://creativecommons.org/licenses/by-sa/4.0/');
     expect(visual?.contains(credit)).toBe(true);
-    expect(visual?.contains(changes)).toBe(false);
-    expect(changes?.textContent).toContain('re-encoded both local variants');
+    expect(disclosure?.open).toBe(false);
+    expect(disclosure?.querySelector('summary')?.getAttribute('aria-label')).toBe('Photo credits');
+    expect(notice?.textContent).toBe('Resized and re-encoded from the source; displayed with a crop.');
+    expect(fixture.nativeElement.textContent).not.toContain('Used the Commons');
   });
 
   it('renders the verified author and license for every selected catalog image', () => {
@@ -98,8 +101,8 @@ describe('PlaceDetailComponent image attribution', () => {
       expect(links[0].getAttribute('href')).toBe(example.sourceUrl);
       expect(links[1].textContent).toContain(example.license);
       expect(links[1].getAttribute('href')).toBe(example.licenseUrl);
-      expect(fixture.nativeElement.querySelector('.place-detail__changes')?.textContent)
-        .toContain('resized one to 640×480');
+      expect(fixture.nativeElement.querySelector('.place-detail__credit-content p')?.textContent)
+        .toBe('Resized and re-encoded from the source; displayed with a crop.');
     }
   });
 

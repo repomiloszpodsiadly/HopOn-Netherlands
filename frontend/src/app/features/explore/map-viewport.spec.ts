@@ -38,6 +38,7 @@ interface MockMap {
   getCanvas: () => MockCanvas;
   getZoom: ReturnType<typeof vi.fn>;
   stop: ReturnType<typeof vi.fn>;
+  resize: ReturnType<typeof vi.fn>;
   setPadding: ReturnType<typeof vi.fn>;
   fitBounds: ReturnType<typeof vi.fn>;
   flyTo: ReturnType<typeof vi.fn>;
@@ -59,6 +60,7 @@ vi.mock('maplibre-gl', () => {
     readonly addControl = vi.fn();
     readonly getZoom = vi.fn(() => 12.2);
     readonly stop = vi.fn();
+    readonly resize = vi.fn();
     readonly setPadding = vi.fn();
     readonly fitBounds = vi.fn();
     readonly flyTo = vi.fn();
@@ -250,6 +252,48 @@ describe('MapViewportComponent', () => {
     await vi.waitFor(() => expect(mockMapState.instances).toHaveLength(1));
     return mockMapState.instances[0] as MockMap;
   }
+
+  it('refits the shared overview after a width change without replacing the map or losing selected-place focus', async () => {
+    let onResize: ResizeObserverCallback = () => undefined;
+    const disconnect = vi.fn();
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) { onResize = callback; }
+      observe = vi.fn();
+      disconnect = disconnect;
+    });
+    const fixture = TestBed.createComponent(MapViewportComponent);
+    fixture.componentRef.setInput('cities', CITIES);
+    fixture.componentRef.setInput('places', [PLACE]);
+    fixture.detectChanges();
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    const resize = (width: number, height: number) => onResize([
+      { contentRect: { width, height } } as ResizeObserverEntry,
+    ], {} as ResizeObserver);
+
+    resize(340, 320);
+    expect(map.resize).toHaveBeenCalledOnce();
+    expect(map.fitBounds).toHaveBeenCalledTimes(2);
+    resize(340, 360);
+    expect(map.fitBounds).toHaveBeenCalledTimes(2);
+    expect(mockMapState.instances).toHaveLength(1);
+
+    fixture.componentRef.setInput('selectedPlaceId', PLACE.id);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    map.flyTo.mockClear();
+    resize(700, 440);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(map.flyTo).toHaveBeenCalledWith(expect.objectContaining({ center: [PLACE.longitude, PLACE.latitude] }));
+    expect(map.fitBounds).toHaveBeenCalledTimes(2);
+    fixture.destroy();
+    expect(disconnect).toHaveBeenCalledOnce();
+    map.resize.mockClear();
+    resize(800, 440);
+    expect(map.resize).not.toHaveBeenCalled();
+  });
 
   it('creates one map, updates its GeoJSON source, and removes listeners on destroy', async () => {
     const fixture = TestBed.createComponent(MapViewportComponent);
@@ -671,25 +715,29 @@ describe('MapViewportComponent', () => {
     fixture.destroy();
   });
 
-  it('emits Browse Places from the unavailable-map fallback button', async () => {
+  it('offers only reconnect and restores the map through that button', async () => {
     mockMapState.throwOnCreate = true;
     const fixture = TestBed.createComponent(MapViewportComponent);
     fixture.componentRef.setInput('cities', CITIES);
     fixture.componentRef.setInput('places', [PLACE]);
-    const browsePlaces = vi.fn();
-    fixture.componentInstance.browsePlaces.subscribe(browsePlaces);
     fixture.detectChanges();
 
     const button = await vi.waitFor(() => {
       const fallbackButton = fixture.nativeElement.querySelector(
-        '.map-viewport__fallback-actions button.button--secondary',
+        '.map-viewport__fallback-actions button.button--primary',
       ) as HTMLButtonElement | null;
       expect(fallbackButton).not.toBeNull();
       return fallbackButton as HTMLButtonElement;
     });
+    expect(fixture.nativeElement.querySelectorAll('.map-viewport__fallback-actions button')).toHaveLength(1);
+    mockMapState.throwOnCreate = false;
     button.click();
-
-    expect(browsePlaces).toHaveBeenCalledOnce();
+    fixture.detectChanges();
+    const map = await waitForMap();
+    map.emit('load');
+    fixture.detectChanges();
+    expect(fixture.componentInstance.mapReady()).toBe(true);
+    expect(fixture.nativeElement.querySelector('.map-viewport__fallback')).toBeNull();
     fixture.destroy();
   });
 });

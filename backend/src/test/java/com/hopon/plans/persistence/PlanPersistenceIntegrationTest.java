@@ -50,6 +50,7 @@ class PlanPersistenceIntegrationTest {
         planRepository.saveAndFlush(new PlanEntity(
                 planId,
                 "Amsterdam afternoon",
+                "Canals first.\nCoffee afterwards.",
                 "amsterdam",
                 originalOrder,
                 createdAt,
@@ -58,10 +59,12 @@ class PlanPersistenceIntegrationTest {
         entityManager.clear();
         PlanEntity reloaded = planRepository.findById(planId).orElseThrow();
         assertThat(reloaded.getPlaceIds()).containsExactlyElementsOf(originalOrder);
+        assertThat(reloaded.getDescription()).isEqualTo("Canals first.\nCoffee afterwards.");
 
         List<String> reordered = List.of(originalOrder.get(2), originalOrder.get(0), originalOrder.get(1));
         reloaded.replaceWith(
                 reloaded.getName(),
+                reloaded.getDescription(),
                 reloaded.getCityId(),
                 reordered,
                 reloaded.getUpdatedAt());

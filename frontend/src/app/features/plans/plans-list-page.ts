@@ -1,12 +1,13 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlansApiService } from '../../core/api/plans-api.service';
 import { CityId } from '../../core/models/catalog.models';
-import { PlanResponse } from '../../core/models/plan.models';
+import { MAX_SAVED_PLANS, PlanResponse } from '../../core/models/plan.models';
 import { MainNavigationComponent } from '../shared/main-navigation';
+import { PointerLightDirective } from '../shared/pointer-light';
 
 type PlansListResult = Readonly<{
   plans: readonly PlanResponse[] | null;
@@ -21,9 +22,9 @@ const CITY_NAMES: Readonly<Record<CityId, string>> = {
 
 @Component({
   selector: 'app-plans-list-page',
-  imports: [RouterLink, MainNavigationComponent],
+  imports: [RouterLink, MainNavigationComponent, PointerLightDirective],
   templateUrl: './plans-list-page.html',
-  styleUrl: './plans-page.css',
+  styleUrls: ['./plans-page.css', './plan-workspace.css', './plans-list-page.css'],
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class PlansListPage {
@@ -32,6 +33,9 @@ export class PlansListPage {
   private readonly reloadRequests = new Subject<void>();
 
   readonly plans = signal<readonly PlanResponse[]>([]);
+  readonly planLimit = MAX_SAVED_PLANS;
+  readonly atCapacity = computed(() => this.plans().length >= this.planLimit);
+  readonly totalPlaces = computed(() => this.plans().reduce((total, plan) => total + plan.placeIds.length, 0));
   readonly loading = signal(true);
   readonly error = signal<string | null>(null);
 

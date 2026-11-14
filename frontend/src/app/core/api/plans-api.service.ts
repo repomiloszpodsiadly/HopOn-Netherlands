@@ -2,7 +2,7 @@ import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { isCityId } from '../models/catalog.models';
-import { PlanResponse, PlanUpsertRequest } from '../models/plan.models';
+import { PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../models/plan.models';
 
 export class UnexpectedPlanResponseError extends Error {
   constructor() {
@@ -45,6 +45,12 @@ export class PlansApiService {
   updatePlan(id: string, request: PlanUpsertRequest): Observable<PlanResponse> {
     return this.http.put<unknown>(`/api/plans/${encodeURIComponent(id)}`, request, { observe: 'response' }).pipe(
       map((response) => requirePlanResponse(response, 200, id)),
+    );
+  }
+
+  autosaveDraft(id: string, request: PlanUpsertRequest): Observable<PlanResponse> {
+    return this.http.put<unknown>(`/api/plans/${encodeURIComponent(id)}/autosave`, request, { observe: 'response' }).pipe(
+      map(response => requirePlanResponse(response, 200, id)),
     );
   }
 
@@ -91,6 +97,7 @@ function asPlanResponse(value: unknown): PlanResponse | null {
   const candidate = value as Record<string, unknown>;
   const id = candidate['id'];
   const name = candidate['name'];
+  const description = candidate['description'] === undefined ? '' : candidate['description'];
   const cityId = candidate['cityId'];
   const createdAt = candidate['createdAt'];
   const updatedAt = candidate['updatedAt'];
@@ -100,11 +107,12 @@ function asPlanResponse(value: unknown): PlanResponse | null {
     || !UUID_PATTERN.test(id)
     || typeof name !== 'string'
     || name.trim().length === 0
-    || name.length > 80
+    || name.length > PLAN_NAME_MAX_LENGTH
+    || typeof description !== 'string'
+    || description.length > PLAN_DESCRIPTION_MAX_LENGTH
     || typeof cityId !== 'string'
     || !isCityId(cityId)
     || !Array.isArray(placeIds)
-    || placeIds.length < 1
     || placeIds.length > 12
     || !placeIds.every((placeId) => typeof placeId === 'string' && placeId.length > 0)
     || new Set(placeIds).size !== placeIds.length
@@ -116,6 +124,7 @@ function asPlanResponse(value: unknown): PlanResponse | null {
   return {
     id,
     name,
+    description,
     cityId,
     placeIds: [...placeIds] as string[],
     createdAt,

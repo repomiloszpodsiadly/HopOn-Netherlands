@@ -26,8 +26,11 @@ public class PlanEntity {
     @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
-    @Column(name = "name", nullable = false, length = 80)
+    @Column(name = "name", nullable = false, length = 30)
     private String name;
+
+    @Column(name = "description", nullable = false, length = 500)
+    private String description;
 
     @Column(name = "city_id", nullable = false, length = 40)
     private String cityId;
@@ -52,12 +55,14 @@ public class PlanEntity {
     public PlanEntity(
             UUID id,
             String name,
+            String description,
             String cityId,
             List<String> placeIds,
             Instant createdAt,
             Instant updatedAt) {
         this.id = id;
         this.name = name;
+        this.description = description;
         this.cityId = cityId;
         this.placeIds = new ArrayList<>(placeIds);
         this.createdAt = createdAt;
@@ -76,6 +81,10 @@ public class PlanEntity {
         return cityId;
     }
 
+    public String getDescription() {
+        return description;
+    }
+
     public List<String> getPlaceIds() {
         return List.copyOf(placeIds);
     }
@@ -90,10 +99,12 @@ public class PlanEntity {
 
     public void replaceWith(
             String name,
+            String description,
             String cityId,
             List<String> orderedPlaceIds,
             Instant updatedAt) {
         this.name = name;
+        this.description = description;
         this.cityId = cityId;
         placeIds.clear();
         placeIds.addAll(orderedPlaceIds);

@@ -1,0 +1,143 @@
+/* Decorative light stays behind content and never captures pointer input. */
+.workspace {
+  position: relative;
+  isolation: isolate;
+  border-color: #fffbf4;
+  box-shadow: 0 18px 50px rgb(117 77 35 / 15%), 0 0 0 1px rgb(230 201 173 / 45%), 0 0 28px rgb(255 229 202 / 22%);
+}
+
+.workspace::before,
+.workspace::after {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  content: '';
+}
+
+.workspace::before {
+  background: radial-gradient(ellipse at 15% 0, rgb(247 208 183 / 23%), transparent 42%), radial-gradient(ellipse at 90% 100%, rgb(246 225 190 / 22%), transparent 42%);
+}
+
+.workspace::after {
+  background: radial-gradient(ellipse at 10% 5%, rgb(244 219 182 / 24%), transparent 45%), radial-gradient(ellipse at 95% 85%, rgb(244 199 183 / 23%), transparent 45%);
+  opacity: .2;
+}
+
+app-map-viewport {
+  position: relative;
+  isolation: isolate;
+  border-radius: 28px;
+}
+
+app-map-viewport::before {
+  position: absolute;
+  z-index: -1;
+  inset: -3px;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #ebc9af, #f5e5d4 32%, #eed9b9 75%, #e8cebf);
+  box-shadow: -5px -4px 23px rgb(231 186 158 / 16%), 5px 6px 24px rgb(239 200 142 / 14%);
+  opacity: .65;
+  pointer-events: none;
+  content: '';
+  transition: opacity 300ms ease;
+}
+
+app-map-viewport:focus-within::before { opacity: 1; }
+
+.discovery h1 em::after {
+  height: 3px;
+  border: 0;
+  background: linear-gradient(90deg, transparent, #cd8551 30%, #d9b58d);
+  box-shadow: 0 2px 8px rgb(231 175 107 / 18%);
+}
+
+.search-box {
+  background: rgb(255 253 247 / 92%);
+  box-shadow: 0 3px 12px rgb(139 105 76 / 7%), inset 0 1px #fff;
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.search-box:focus-within { border-color: #4b8c71; box-shadow: 0 0 0 3px rgb(91 187 145 / 14%), 0 4px 18px rgb(84 183 143 / 12%); }
+.saved-plans-link { background: #fffcf6; border-color: #dfd1bb; box-shadow: inset 0 1px #fff; transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+.saved-plans-link > span { transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
+
+.filter-chip { box-shadow: inset 0 1px rgb(255 255 255 / 90%); transition: background-color 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
+.filter-chip--selected { background: linear-gradient(130deg, #f3eadb, #eaddc8); box-shadow: inset 0 1px rgb(255 250 237 / 85%), 0 2px 6px rgb(121 101 72 / 8%); }
+.filter-chip--selected .filter-chip__icon { box-shadow: inset 0 0 0 1px rgb(177 155 119 / 16%); }
+.filter-chip__icon { transition: transform 320ms cubic-bezier(.2, .8, .2, 1); }
+.filter-chip::before { position: absolute; right: 12px; bottom: 0; left: 12px; height: 2px; border-radius: 2px; background: linear-gradient(90deg, transparent, #b39468, transparent); opacity: 0; pointer-events: none; content: ''; transition: opacity 200ms ease; }
+.filter-chip--selected::before { opacity: .8; }
+
+.draft-panel {
+  border-color: #eadccd;
+  box-shadow: inset 0 1px #fff, 0 8px 26px rgb(157 119 82 / 10%), 0 0 18px rgb(244 216 183 / 15%);
+}
+
+.draft-editor-link {
+  position: relative;
+  align-self: center;
+  isolation: isolate;
+  overflow: hidden;
+  background: linear-gradient(130deg, #62604c, #4d503f 75%);
+  box-shadow: inset 0 1px rgb(255 239 205 / 25%), 0 4px 12px rgb(98 83 56 / 16%);
+  padding-right: 8px;
+  gap: 12px;
+  transition: box-shadow 220ms ease, transform 180ms ease;
+}
+
+.draft-editor-link::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(110deg, transparent 30%, rgb(255 246 223 / 8%) 48%, transparent 65%);
+  transform: translateX(-110%);
+  pointer-events: none;
+  content: '';
+}
+
+.draft-editor-link > span { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border: 1px solid rgb(255 244 222 / 17%); border-radius: 50%; background: rgb(255 244 222 / 7%); font-size: 23px; line-height: 1; transition: transform 320ms cubic-bezier(.2, .8, .2, 1), background-color 220ms ease; }
+.draft-editor-link:focus-visible > span { background: rgb(255 244 222 / 13%); }
+.draft-editor-link > span svg { display: block; width: 18px; height: 18px; }
+
+@media (hover: hover) {
+  app-map-viewport:hover::before { opacity: 1; }
+  .filter-chip:hover:not(:disabled) { border-color: #c5b59b; background: #f7f1e6; box-shadow: inset 0 1px rgb(255 255 255 / 65%), 0 2px 7px rgb(154 128 89 / 9%); }
+  .filter-chip--selected:hover:not(:disabled) { border-color: #b7a182; background: linear-gradient(130deg, #efe3d0, #e6d7bf); }
+  .draft-editor-link:hover { background: linear-gradient(130deg, #68634e, #51513f 75%); box-shadow: inset 0 1px rgb(255 239 205 / 25%), 0 5px 14px rgb(98 83 56 / 19%); }
+  .draft-editor-link:hover > span { background: rgb(255 244 222 / 13%); }
+  .saved-plans-link:hover { border-color: #bca682; background: #f6eddf; box-shadow: inset 0 1px #fff, 0 4px 12px rgb(132 106 68 / 9%); }
+}
+
+/* One short colour wash on arrival; interaction provides the later changes. */
+@media (prefers-reduced-motion: no-preference) {
+  .workspace::after { animation: ambient-arrival 4.8s ease-out; }
+  .draft-editor-link:is(:hover, :focus-visible)::before { animation: action-sheen 680ms ease-out; }
+  .draft-editor-link:active { transform: translateY(1px) scale(.99); }
+  .filter-chip:active .filter-chip__icon { transform: scale(.92); }
+  .discovery__brand-row, .discovery h1, .category-panel, .draft-panel { animation: surface-arrival 500ms ease-out backwards; }
+  .discovery h1 { animation-delay: 40ms; }
+  .category-panel { animation-delay: 90ms; }
+  .draft-panel { animation-delay: 140ms; }
+}
+
+@media (hover: hover) and (prefers-reduced-motion: no-preference) {
+  .filter-chip:hover:not(:active) .filter-chip__icon { transform: translateY(-2px) rotate(-4deg); }
+  .draft-editor-link:hover > span { transform: translateX(2px); }
+  .saved-plans-link:hover > span { transform: translateX(3px); }
+}
+
+@keyframes ambient-arrival {
+  0%, 100% { opacity: .2; }
+  45% { opacity: 1; }
+}
+
+@keyframes action-sheen { to { transform: translateX(110%); } }
+@keyframes surface-arrival { from { opacity: 0; } to { opacity: 1; } }
+
+@media (forced-colors: active) {
+  .workspace::before, .workspace::after, app-map-viewport::before, .draft-editor-link::before { display: none; }
+  .filter-chip--selected { outline: 2px solid Highlight; outline-offset: -3px; }
+}

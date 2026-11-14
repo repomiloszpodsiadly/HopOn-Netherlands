@@ -1,21 +1,34 @@
 <div class="plans-shell plans-list-shell">
   <header class="plans-topbar">
-    <a class="plans-brand" routerLink="/" aria-label="HopOn Netherlands home">
-      <span class="brand__symbol" aria-hidden="true"><span></span></span>
-      <span class="brand__wordmark">hopon<span>.</span></span>
+    <a class="plans-brand hopon-brand" routerLink="/" aria-label="HopOn Netherlands home">
+      <img src="/assets/brand/hopon-tulip.svg" width="32" height="38" alt="" />
+      <span>HopOn<small>Netherlands</small></span>
     </a>
-    <span class="plans-topbar__note">Your city days</span>
   </header>
 
   <main class="plans-main plans-list-main" aria-labelledby="saved-plans-title" [attr.aria-busy]="loading()">
     <div class="plans-list-heading">
-      <div>
+      <div class="plans-list-heading__copy">
         <p class="plans-eyebrow">YOUR CITY DAYS</p>
-        <h1 id="saved-plans-title">Saved <em>Plans.</em></h1>
-        <p class="plans-intro">Keep the places you are looking forward to together and shape them into a day.</p>
+        <div class="plans-title-row">
+          <h1 id="saved-plans-title">Saved <em>Plans.</em></h1>
+          <a class="plans-back-places" appPointerLight routerLink="/">
+            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Back to places
+          </a>
+        </div>
+        <p class="plans-intro">Your next days out, all in one place.</p>
       </div>
-      <a class="plans-button plans-button--primary" routerLink="/plans/new">Create a plan</a>
+      @if (atCapacity()) {
+        <button class="plans-button plans-button--primary" type="button" disabled aria-describedby="plan-capacity-message">6 / 6 plans</button>
+      } @else {
+        <a class="plans-button plans-button--primary" appPointerLight routerLink="/plans/new"><span aria-hidden="true">+</span> Create a plan</a>
+      }
     </div>
+
+    @if (atCapacity()) {
+      <p id="plan-capacity-message" class="plans-capacity-notice" role="status">You have 6 of 6 saved plans. Open and use an existing plan, or delete one before creating another. Each plan can still hold up to 12 places.</p>
+    }
 
     @if (loading()) {
       <section class="plans-loading" role="status" aria-label="Loading saved plans">
@@ -31,21 +44,34 @@
       </section>
     } @else if (plans().length === 0) {
       <section class="plans-empty" aria-labelledby="plans-empty-title">
-        <span class="plans-empty__mark" aria-hidden="true">✳</span>
+        <span class="plans-empty__mark" aria-hidden="true"><img src="/assets/brand/day-plan-glass-map.png" width="88" height="88" alt="" /></span>
         <h2 id="plans-empty-title">Your plan book is ready.</h2>
-        <p>Save a day from Explore and it will appear here.</p>
+        <p>Start with a name and a city. Add places whenever you&#8217;re ready.</p>
         <a class="plans-button plans-button--primary" routerLink="/plans/new">Start your first plan</a>
       </section>
     } @else {
+      <div class="plans-collection-heading">
+        <p>Your collection</p>
+        <span>{{ plans().length }} {{ plans().length === 1 ? 'plan' : 'plans' }} <i aria-hidden="true">·</i> {{ totalPlaces() }} {{ totalPlaces() === 1 ? 'place' : 'places' }}</span>
+      </div>
       <ul class="saved-plan-list" aria-label="Saved plans">
         @for (plan of plans(); track plan.id) {
           <li>
-            <article class="saved-plan-card">
-              <a class="saved-plan-card__open" [routerLink]="['/plans', plan.id]" [attr.aria-label]="'Open ' + plan.name + ' in ' + cityName(plan.cityId)">
-                <span class="saved-plan-card__city">{{ cityName(plan.cityId) }}</span>
-                <h2>{{ plan.name }}</h2>
-                <span class="saved-plan-card__count">{{ plan.placeIds.length }} {{ plan.placeIds.length === 1 ? 'place' : 'places' }}</span>
-              </a>
+            <article class="saved-plan-card" [attr.data-city]="plan.cityId">
+              <a class="saved-plan-card__open" appPointerLight [routerLink]="['/plans', plan.id]" [attr.aria-label]="'Open ' + plan.name + ' in ' + cityName(plan.cityId)">
+                <div class="saved-plan-card__cover">
+                  <span class="saved-plan-card__city">{{ cityName(plan.cityId) }}</span>
+                  <img [src]="'/assets/brand/city-' + plan.cityId + '.svg'" width="180" height="200" alt="" loading="lazy" />
+                </div>
+                <div class="saved-plan-card__body">
+                  <div class="saved-plan-card__eyebrow"><span>CITY PLAN</span><span class="saved-plan-card__arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M7 17 17 7M7 7h10v10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" /></svg></span></div>
+                  <h2 [title]="plan.name">{{ plan.name }}</h2>
+                  <span class="saved-plan-card__count">
+                    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M19 10c0 5-7 11-7 11S5 15 5 10a7 7 0 1 1 14 0Z" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="10" r="2.3" stroke="currentColor" stroke-width="1.6"/></svg>
+                    {{ plan.placeIds.length }} {{ plan.placeIds.length === 1 ? 'place' : 'places' }}
+                  </span>
+                  <p class="saved-plan-card__hint">{{ plan.placeIds.length === 0 ? 'Ready for your first place.' : 'Your stops, your order.' }}</p>
+                </div>
               <dl class="saved-plan-card__dates">
                 <div>
                   <dt>Created</dt>
@@ -56,6 +82,7 @@
                   <dd><time [attr.datetime]="plan.updatedAt">{{ formatDate(plan.updatedAt) }}</time></dd>
                 </div>
               </dl>
+              </a>
             </article>
           </li>
         }
@@ -63,6 +90,5 @@
     }
   </main>
 
-  <footer class="plans-footer"><span>HopOn Netherlands</span><span>Each plan keeps your stops together in the order you chose.</span></footer>
   <app-main-navigation />
 </div>

@@ -1,0 +1,29 @@
+.pointer-light {
+  position: relative;
+  isolation: isolate;
+}
+
+.pointer-light::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  padding: 1.5px;
+  border-radius: inherit;
+  background: radial-gradient(160px circle at var(--light-x, 50%) var(--light-y, 50%), #d4a66c, rgb(219 188 144 / 55%) 40%, transparent 75%);
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  opacity: 0;
+  pointer-events: none;
+  content: '';
+  transition: opacity 220ms ease;
+}
+
+.pointer-light:focus-visible::after { opacity: 1; }
+
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: no-preference) {
+  .pointer-light:hover:not(:disabled)::after { opacity: 1; }
+}
+
+@media (forced-colors: active) {
+  .pointer-light::after { display: none; }
+}

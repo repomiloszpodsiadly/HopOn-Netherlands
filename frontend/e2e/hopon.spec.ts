@@ -8,13 +8,20 @@ const isolatedStyle = {
   version: 8,
   name: 'HopOn deterministic E2E style',
   glyphs: 'http://127.0.0.1:4300/__e2e/glyphs/{fontstack}/{range}.pbf',
-  sources: {},
+  sources: {
+    'fixture-attribution': {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
+      attribution: 'OpenFreeMap · © OpenMapTiles · © OpenStreetMap contributors',
+    },
+  },
   layers: [
     {
       id: 'background',
       type: 'background',
       paint: { 'background-color': '#f1eee6' },
     },
+    { id: 'fixture-attribution', type: 'circle', source: 'fixture-attribution' },
   ],
 };
 const tileOutageStyle = {
@@ -80,6 +87,37 @@ test('loads one shared catalog from all three cities without a city picker', asy
     getActualPlaces(page, cityId),
   ));
   expect(catalogs.map((places) => places.length).every((count) => count > 0)).toBe(true);
+});
+
+test('keeps pointer highlights decorative while filtering and keyboard navigation remain functional', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/');
+  await expect(page.locator('.place-card').first()).toBeVisible();
+  const all = page.locator('.filter-row').getByRole('button', { name: 'All', exact: true });
+  await all.hover({ position: { x: 15, y: 15 } });
+  await expect.poll(() => all.evaluate((element) => element.style.getPropertyValue('--light-x'))).not.toBe('');
+  const firstPosition = await all.evaluate((element) => element.style.getPropertyValue('--light-x'));
+  const width = await all.evaluate((element) => element.clientWidth);
+  await all.hover({ position: { x: width - 15, y: 15 } });
+  await expect.poll(() => all.evaluate((element) => element.style.getPropertyValue('--light-x'))).not.toBe(firstPosition);
+
+  const museums = page.locator('.filter-row').getByRole('button', { name: 'Museums', exact: true });
+  await museums.click();
+  await expect(museums).toHaveAttribute('aria-pressed', 'true');
+  await expect(all).toHaveAttribute('aria-pressed', 'false');
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await all.hover();
+  await expect.poll(() => all.evaluate((element) => element.style.getPropertyValue('--light-x'))).toBe('');
+  await all.focus();
+  await page.keyboard.press('Enter');
+  await expect(all).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('.result-count')).toHaveText('2707 places');
+
+  await page.locator('.draft-editor-link').focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/plans\/new/);
 });
 
 test('keeps successful city catalogs searchable during a delayed city and recovers a failed city on retry', async ({ page }) => {
@@ -277,6 +315,9 @@ test('renders correctly licensed featured-photo fixtures across cities and respo
         .toBeGreaterThan(0);
 
       const credit = card.locator('xpath=..').locator('.place-card__credit');
+      if (!(await credit.evaluate((element) => (element as HTMLDetailsElement).open))) {
+        await credit.locator('summary').click();
+      }
       await expect(credit).toContainText(featured.author);
       await expect(credit).toContainText(featured.license);
       await expect(credit).toContainText('Resized and re-encoded from the source; displayed with a crop.');
@@ -391,32 +432,42 @@ test('traces draft-to-catalog keyboard focus and visual positions across viewpor
   }
 });
 
-test('uses automatic scrolling for the map Browse Places action with reduced motion', async ({ page }) => {
+test('offers one reconnect action and recovers again after the map connection is lost', async ({ page }, testInfo) => {
+  test.setTimeout(45_000);
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await page.addInitScript(() => {
-    const scrollIntoView = Element.prototype.scrollIntoView;
-    Element.prototype.scrollIntoView = function (this: Element, options?: ScrollIntoViewOptions): void {
-      if (this instanceof HTMLElement && this.classList.contains('place-results')) {
-        sessionStorage.setItem('hopon:test-browse-scroll-options', JSON.stringify(options ?? null));
-      }
-      scrollIntoView.call(this, options);
-    };
-  });
   await page.unroute(openFreeMapStyleUrl);
   await page.route(openFreeMapStyleUrl, (route) =>
     route.fulfill({ status: 503, contentType: 'text/plain', body: 'Controlled map outage' }),
   );
   await page.goto('/');
+  await expect(page.locator('.map-viewport__loading')).toHaveCSS('background-color', 'rgb(251, 244, 233)');
+  await page.screenshot({ path: testInfo.outputPath('warm-map-loading.png') });
   await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.map-viewport__fallback')).toHaveCSS('background-color', 'rgb(251, 244, 233)');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('.map-viewport__fallback').scrollIntoViewIfNeeded();
+  await page.screenshot({ path: testInfo.outputPath('warm-map-fallback-mobile.png') });
+  await page.setViewportSize({ width: 1440, height: 1000 });
 
-  await page.getByRole('button', { name: 'Browse places' }).click();
-  await expect(page.locator('.place-results')).toBeFocused();
-  expect(await page.evaluate(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)).toBe(true);
-  expect(await page.evaluate(() => sessionStorage.getItem('hopon:test-browse-scroll-options')))
-    .toBe(JSON.stringify({ behavior: 'auto', block: 'start' }));
+  await expect(page.locator('.map-viewport__fallback-actions button')).toHaveCount(1);
+  await page.unroute(openFreeMapStyleUrl);
+  await page.route(openFreeMapStyleUrl, route => route.fulfill({ json: isolatedStyle }));
+  await page.getByRole('button', { name: 'Retry map', exact: true }).click();
+  await waitForMapReady(page);
+  await page.locator('.map-viewport__canvas canvas').evaluate(canvas => canvas.dispatchEvent(new Event('webglcontextlost', { cancelable: true })));
+  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible();
+  await expect(page.locator('.map-viewport__fallback-actions button')).toHaveCount(1);
+  await page.getByRole('button', { name: 'Retry map', exact: true }).click();
+  await waitForMapReady(page);
+  await expect(page.locator('.map-viewport__fallback')).toHaveCount(0);
+  await expect(page.locator('.place-card').first()).toBeVisible();
 });
 
 test('keeps the shared draft CTA before the catalog and opens the selected POI city', async ({ page }) => {
+  const owned: string[] = [];
+  let failed = false;
+  trackAutosavedPlans(page, owned);
+  try {
   await page.goto('/');
   await expect(page.locator('.place-card').first()).toBeVisible();
   await expect(page.locator('.place-card')).toHaveCount(40);
@@ -470,10 +521,11 @@ test('keeps the shared draft CTA before the catalog and opens the selected POI c
   const placeName = 'Erasmus Bridge';
   await openExplorePlaceByName(page, placeName);
   await expect(page.locator('.place-detail')).toContainText('Rotterdam');
-  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
-  await expect(page.locator('.draft-count')).toContainText('1 stop');
-  await expect(page.locator('.draft-panel')).toContainText('Temporary tab draft for Rotterdam');
-  const reviewLink = page.getByRole('link', { name: 'Review and save draft' });
+  const saved = await confirmMapAddition(page);
+  await expect(page.locator('.draft-count')).toHaveText('1 / 12');
+  await expect(page.locator('.draft-panel')).toContainText(saved.id ? 'CURRENT PLAN' : '');
+  await expect(page.locator('.draft-panel')).not.toContainText('Temporary');
+  const reviewLink = page.getByRole('link', { name: 'Review current plan' });
   await reviewLink.focus();
   await expect(reviewLink).toBeFocused();
 
@@ -491,10 +543,12 @@ test('keeps the shared draft CTA before the catalog and opens the selected POI c
 
   await reviewLink.scrollIntoViewIfNeeded();
   await reviewLink.click();
-  await expect(page).toHaveURL(/\/plans\/new(?:\?.*)?$/);
-  await expect(page.locator('#plan-name')).toHaveValue('Rotterdam plan');
-  await expect(page.locator('#plan-city')).toHaveValue('rotterdam');
-  await expect(page.locator('.editor-place h3')).toHaveText([placeName]);
+  await expect(page).toHaveURL(`/plans/${saved.id}`);
+  await expect(page.locator('#saved-plan-name')).toHaveValue(saved.name);
+  await expect(page.locator('.details-city-label')).toHaveText('Starts in Rotterdam');
+  await expect(page.locator('.details-stop__copy')).toContainText(placeName);
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
 });
 
 test('captures the actual initial Explore viewport on compact phones', async ({ page }) => {
@@ -627,6 +681,10 @@ test('keeps Explore search usable with a shortened keyboard viewport, landscape 
 });
 
 test('captures real Explore viewport states without screenshot-only styling', async ({ page }) => {
+  const owned: string[] = [];
+  let failed = false;
+  trackAutosavedPlans(page, owned);
+  try {
   test.setTimeout(180_000);
   const screenshotsDirectory = join(process.cwd(), 'test-results', 'hop004-e-real-viewport', 'explore');
   const viewports = [
@@ -651,14 +709,14 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await assertRealViewportGeometry(page, viewport);
     await page.screenshot({ path: join(screenshotsDirectory, `explore-initial-${size}.png`) });
 
-    const mapCaption = page.locator('.map-caption');
-    await mapCaption.scrollIntoViewIfNeeded();
-    const captionBounds = await mapCaption.boundingBox();
+    const mapAttribution = page.locator('.maplibregl-ctrl-attrib');
+    await mapAttribution.scrollIntoViewIfNeeded();
+    const attributionBounds = await mapAttribution.boundingBox();
     if (viewport.width <= 760) {
       const navigationBounds = await page.locator('app-main-navigation .bottom-nav').boundingBox();
-      expect(captionBounds).not.toBeNull();
+      expect(attributionBounds).not.toBeNull();
       expect(navigationBounds).not.toBeNull();
-      expect(captionBounds!.y + captionBounds!.height).toBeLessThanOrEqual(navigationBounds!.y);
+      expect(attributionBounds!.y + attributionBounds!.height).toBeLessThanOrEqual(navigationBounds!.y);
     }
 
     await page.goto('/');
@@ -684,11 +742,12 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await expect(detail).toBeVisible();
     await detail.locator('.place-detail__close').scrollIntoViewIfNeeded();
     await expect(detail.locator('.place-detail__close')).toBeInViewport();
-    const visualBounds = await detail.locator('.place-detail__visual').boundingBox();
-    const changesBounds = await detail.locator('.place-detail__changes').boundingBox();
-    expect(visualBounds).not.toBeNull();
-    expect(changesBounds).not.toBeNull();
-    expect(changesBounds!.y).toBeGreaterThanOrEqual(visualBounds!.y + visualBounds!.height);
+    const photoCredits = detail.locator('.place-detail__credit');
+    await expect(photoCredits.locator('.place-detail__credit-content')).toBeHidden();
+    await photoCredits.locator('summary').click();
+    await expect(photoCredits.locator('a').first()).toBeVisible();
+    await expect(photoCredits).toContainText('Resized and re-encoded from the source; displayed with a crop.');
+    await photoCredits.locator('summary').click();
     const detailAddButton = detail.getByRole('button', { name: 'Add to plan' });
     await detailAddButton.scrollIntoViewIfNeeded();
     await expect(detailAddButton).toBeInViewport();
@@ -698,10 +757,10 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await expect(detail).toHaveCount(0);
 
     await addExplorePlaceFromCard(page, 0);
-    await expect(page.locator('.draft-count')).toContainText('1 stop');
+    await expect(page.locator('.draft-count')).toHaveText('1 / 12');
     const draftPanel = page.locator('.draft-panel');
     await draftPanel.scrollIntoViewIfNeeded();
-    const draftReviewLink = page.getByRole('link', { name: 'Review and save draft' });
+    const draftReviewLink = page.getByRole('link', { name: 'Review current plan' });
     await expect(draftReviewLink).toBeInViewport();
     await assertRealViewportGeometry(page, viewport);
     if (viewport.width <= 760) {
@@ -726,8 +785,11 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await page.route(openFreeMapStyleUrl, (route) =>
       route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(isolatedStyle) }),
     );
-    await page.evaluate(() => sessionStorage.removeItem('hopon:draft:v1'));
+    await cleanupCreatedPlans(page, owned.splice(0), false);
+    await page.evaluate(() => { sessionStorage.removeItem('hopon:draft:v1'); sessionStorage.removeItem('hopon:active-plan:v1'); });
   }
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
 });
 
 test('real OpenFreeMap live style smoke [live-map]', async ({ page }) => {
@@ -814,334 +876,924 @@ test('keeps desktop Discover hidden while the map and catalog remain usable', as
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
 });
 
-test('adds each city’s Discover picks once and restores the tab draft at tablet and mobile widths', async ({ page }) => {
-  const cityIds = [
-    { id: 'amsterdam', name: 'Amsterdam' },
-    { id: 'rotterdam', name: 'Rotterdam' },
-    { id: 'utrecht', name: 'Utrecht' },
-  ] as const;
-  for (const viewport of [
-    { width: 1024, height: 768 },
-    { width: 390, height: 844 },
-  ]) {
-    await page.setViewportSize(viewport);
-    for (const city of cityIds) {
-      await page.goto('/');
-      await expect(page.locator('.discover-panel')).toBeVisible();
-      await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-      const group = page.getByRole('region', { name: `Discover picks in ${city.name}` });
-      const picks = group.locator('.discover-pick');
-      await expect(picks.first()).toBeVisible({ timeout: 15_000 });
-      const pickCount = await picks.count();
-      expect(pickCount).toBeGreaterThan(0);
-
-      const addCityPicks = group.getByRole('button', { name: `Add ${city.name} picks to plan` });
-      await addCityPicks.click();
-      await expect(page.locator('.draft-panel')).toContainText(`Temporary tab draft for ${city.name}`);
-      const draft = await page.evaluate(() =>
-        JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
-          cityId: string;
-          placeIds: string[];
-        } | null,
-      );
-      expect(draft?.cityId).toBe(city.id);
-      expect(draft?.placeIds).toHaveLength(pickCount);
-      const cityPlaces = await getActualPlaces(page, city.id);
-      expect(draft!.placeIds.every((id) => cityPlaces.some((place) => place.id === id))).toBe(true);
-
-      await addCityPicks.click();
-      await expect(page.locator('.draft-feedback')).toContainText('Already in plan');
-      await expect(page.locator('.draft-count')).toContainText(`${pickCount} ${pickCount === 1 ? 'stop' : 'stops'}`);
-
-      await page.evaluate(() => sessionStorage.removeItem('hopon:draft:v1'));
+test('autosaves each city’s Discover picks once at tablet and mobile widths', async ({ page }) => {
+  test.setTimeout(90_000);
+  const owned: string[] = [];
+  let failed = false;
+  try {
+    for (const viewport of [{ width: 1024, height: 768 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      for (const city of [{ id: 'amsterdam', name: 'Amsterdam' }, { id: 'rotterdam', name: 'Rotterdam' }, { id: 'utrecht', name: 'Utrecht' }]) {
+        await page.goto('/plans/new?city=' + city.id);
+        await page.locator('.editor-cancel').click();
+        await page.getByRole('button', { name: 'Architecture Hunt', exact: true }).click();
+        const group = page.getByRole('region', { name: 'Discover picks in ' + city.name });
+        await expect(group.locator('.discover-pick').first()).toBeVisible();
+        const count = await group.locator('.discover-pick').count();
+        const save = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname.endsWith('/autosave'));
+        const add = group.getByRole('button', { name: 'Add ' + city.name + ' picks to plan', exact: true });
+        await add.click();
+        const response = await save;
+        expect(response.status()).toBe(200);
+        const plan = await response.json() as { id: string; cityId: string; placeIds: string[] };
+        owned.push(plan.id);
+        expect(plan.cityId).toBe(city.id);
+        expect(plan.placeIds).toHaveLength(count);
+        await expect(page.locator('.draft-count')).toHaveText(count + ' / 12');
+        await add.click();
+        await expect(page.locator('.draft-feedback')).toContainText('already in this plan');
+        await page.reload();
+        await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', '/plans/' + plan.id);
+        expect((await page.request.delete('/api/plans/' + plan.id)).status()).toBe(204);
+      }
     }
-  }
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
 });
 
 test('completes real H2 CRUD from Explore while OpenFreeMap is unavailable', async ({ page }) => {
-  test.setTimeout(60_000);
-  const testPlanIds: string[] = [];
-  let testFailed = false;
+  test.setTimeout(90_000);
+  const owned: string[] = [];
+  let failed = false;
+  trackAutosavedPlans(page, owned);
   try {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.unroute(openFreeMapStyleUrl);
-    let blockedMapRequests = 0;
-    await page.route(openFreeMapStyleUrl, (route) => {
-      blockedMapRequests += 1;
-      return route.fulfill({ status: 503, contentType: 'text/plain', body: 'Map blocked for CRUD check' });
-    });
-
-    const [amsterdamPlaces, rotterdamPlaces, utrechtPlaces] = await Promise.all([
-      getActualPlaces(page, 'amsterdam'),
-      getActualPlaces(page, 'rotterdam'),
-      getActualPlaces(page, 'utrecht'),
-    ]);
-    const allCityPlaces = [...amsterdamPlaces, ...rotterdamPlaces, ...utrechtPlaces];
-    const placeNameCounts = new Map<string, number>();
-    for (const place of allCityPlaces) {
-      placeNameCounts.set(place.name, (placeNameCounts.get(place.name) ?? 0) + 1);
-    }
-    const uniqueNames = new Set(
-      [...placeNameCounts]
-        .filter(([, count]) => count === 1)
-        .map(([name]) => name),
-    );
-    const planPlaces = amsterdamPlaces.filter((place) => uniqueNames.has(place.name)).slice(0, 3);
-    expect(planPlaces).toHaveLength(3);
-    const initialPlansResponse = await page.request.get('http://127.0.0.1:4300/api/plans');
-    expect(initialPlansResponse.status()).toBe(200);
-    const initialPlans = await initialPlansResponse.json() as { id: string }[];
-    expect(Array.isArray(initialPlans)).toBe(true);
-
-    const unrelatedName = `Unrelated sentinel ${randomUUID()}`;
-    const unrelatedResponse = await page.request.post('http://127.0.0.1:4300/api/plans', {
-      data: { name: unrelatedName, cityId: 'amsterdam', placeIds: [amsterdamPlaces[0].id] },
-    });
-    let unrelatedPlanId: string | null = null;
-    if (unrelatedResponse.status() === 201) {
-      unrelatedPlanId = planIdFromLocation(unrelatedResponse.headers()['location']);
-      if (unrelatedPlanId !== null) {
-        testPlanIds.push(unrelatedPlanId);
-      }
-    }
-    expect(unrelatedResponse.status()).toBe(201);
-    const unrelatedPlan = await unrelatedResponse.json() as { id: string; name: string };
-    expect(unrelatedPlan.name).toBe(unrelatedName);
-    expect(unrelatedPlanId).toBe(unrelatedPlan.id);
-    const preservedPlanIds = [...initialPlans.map((plan) => plan.id), unrelatedPlan.id];
-
+    await page.route(openFreeMapStyleUrl, route => route.fulfill({ status: 503, body: 'Map unavailable' }));
+    const before = await (await page.request.get('/api/plans')).json() as { id: string }[];
     await page.goto('/');
-    await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
-    await expect(page.locator('.place-card').first()).toBeVisible();
-    expect(blockedMapRequests).toBeGreaterThan(0);
-
-    const pickedNames: string[] = [];
-    for (const place of planPlaces) {
-      pickedNames.push(await addExplorePlaceByName(page, place.name));
-    }
-    const initialDraft = await page.evaluate(() =>
-      JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
-        cityId: string;
-        name: string;
-        placeIds: string[];
-      } | null,
-    );
-    expect(initialDraft?.cityId).toBe('amsterdam');
-    expect(initialDraft?.placeIds).toHaveLength(3);
-
-    const plansNavigation = page.locator('app-main-navigation a[href="/plans"]');
-    const firstListRead = page.waitForResponse((response) => isPlansListRead(response));
-    await plansNavigation.click();
-    await expect(page).toHaveURL(/\/plans$/);
-    const plansBeforeCreate = await (await firstListRead).json() as { id: string }[];
-    expect(plansBeforeCreate.map((plan) => plan.id)).toEqual(expect.arrayContaining(preservedPlanIds));
-    await expect(page.locator('.plans-empty')).toHaveCount(0);
-
-    await page.getByRole('link', { name: 'Create a plan', exact: true }).click();
-    await expect(page.locator('#plan-name')).toBeVisible();
-    await expect(page.locator('.editor-place')).toHaveCount(3);
+    await expect(page.getByRole('heading', { name: 'Map unavailable', exact: true })).toBeVisible({ timeout: 15_000 });
+    for (const name of ['Royal Palace', 'Erasmus Bridge', 'Dom Tower']) await addExplorePlaceByName(page, name);
+    const id = await page.evaluate(() => sessionStorage.getItem('hopon:active-plan:v1'));
+    expect(id).toBeTruthy();
+    await page.getByRole('link', { name: 'Review current plan', exact: true }).click();
+    await expect(page.locator('.details-stop')).toHaveCount(3);
+    const renamed = 'Map outage day ' + randomUUID().slice(0, 8);
+    await page.locator('#saved-plan-name').fill(renamed);
+    await page.getByRole('button', { name: 'Move Dom Tower up', exact: true }).click();
+    const update = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname === '/api/plans/' + id);
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    expect((await update).status()).toBe(200);
     await page.reload();
-    await expect(page.locator('#plan-name')).toBeVisible();
-    await expect(page.locator('.editor-place')).toHaveCount(3);
-    const restoredDraft = await page.evaluate(() =>
-      JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
-        cityId: string;
-        name: string;
-        placeIds: string[];
-      } | null,
-    );
-    expect({
-      cityId: restoredDraft?.cityId,
-      name: restoredDraft?.name,
-      placeIds: restoredDraft?.placeIds,
-    }).toEqual({ cityId: initialDraft!.cityId, name: initialDraft!.name, placeIds: initialDraft!.placeIds });
-    await expect(page.locator('.editor-place h3')).toHaveText(pickedNames);
-    const savedName = `Amsterdam after the map closed ${randomUUID()}`;
-    await page.locator('#plan-name').fill(savedName);
-    await page.getByRole('button', { name: `Move ${pickedNames[0]} down` }).click();
-    const createdOrder = [initialDraft!.placeIds[1], initialDraft!.placeIds[0], initialDraft!.placeIds[2]];
-    expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
-      .toMatchObject({ name: savedName, cityId: 'amsterdam', placeIds: createdOrder });
-    await expect(page.getByRole('button', { name: 'Save plan' })).toBeEnabled();
+    await expect(page.locator('#saved-plan-name')).toHaveValue(renamed);
+    const rows = page.locator('.details-stop__copy');
+    for (const [index, name] of ['Royal Palace', 'Dom Tower', 'Erasmus Bridge'].entries()) await expect(rows.nth(index)).toContainText(name);
+    await deletePlanThroughUi(page);
+    const after = await (await page.request.get('/api/plans')).json() as { id: string }[];
+    expect(after.map(plan => plan.id)).toEqual(expect.arrayContaining(before.map(plan => plan.id)));
+    expect(after.some(plan => plan.id === id)).toBe(false);
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
+});
 
-    const postResponsePromise = page.waitForResponse((response) =>
-      response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans',
-    );
-    await page.getByRole('button', { name: 'Save plan' }).click();
-    const postResponse = await postResponsePromise;
-    if (postResponse.status() === 201) {
-      const createdIdFromLocation = planIdFromLocation(postResponse.headers()['location']);
-      if (createdIdFromLocation !== null) {
-        testPlanIds.push(createdIdFromLocation);
-      }
-    }
-    if (postResponse.status() !== 201) {
-      throw new Error(`Real plan POST returned ${postResponse.status()}: ${await postResponse.text()}`);
-    }
-    const created = await postResponse.json() as {
-      id: string;
-      name: string;
-      cityId: string;
-      placeIds: string[];
-    };
-    expect(postResponse.headers()['location']).toBe(`/api/plans/${created.id}`);
-    expect(created).toMatchObject({ name: savedName, cityId: 'amsterdam', placeIds: createdOrder });
-    expect(postResponse.request().postDataJSON()).toEqual({
-      name: savedName,
-      cityId: 'amsterdam',
-      placeIds: createdOrder,
-    });
-    await expect(page).toHaveURL(`/plans/${created.id}`);
+test('adds places from all three cities to one automatically saved plan', async ({ page }) => {
+  test.setTimeout(60_000);
+  const owned: string[] = [];
+  let failed = false;
+  trackAutosavedPlans(page, owned);
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto('/');
+    for (const name of ['Royal Palace', 'Erasmus Bridge', 'Dom Tower']) await addExplorePlaceByName(page, name);
+    expect(await page.evaluate(() => sessionStorage.getItem('hopon:active-plan:v1'))).toBeTruthy();
     expect(await page.evaluate(() => sessionStorage.getItem('hopon:draft:v1'))).toBeNull();
-    await expect(page.locator('.details-stop__copy h3')).toHaveText([
-      amsterdamPlaces.find((place) => place.id === createdOrder[0])!.name,
-      amsterdamPlaces.find((place) => place.id === createdOrder[1])!.name,
-      amsterdamPlaces.find((place) => place.id === createdOrder[2])!.name,
-    ]);
+    await page.getByRole('link', { name: 'Review current plan', exact: true }).click();
+    await expect(page.locator('.details-stop')).toHaveCount(3);
+    for (const city of ['Amsterdam', 'Rotterdam', 'Utrecht']) await expect(page.locator('.details-stop__copy small').filter({ hasText: city })).toHaveCount(1);
+    await deletePlanThroughUi(page);
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
+});
 
-    const detailListRead = page.waitForResponse((response) => isPlansListRead(response));
-    await page.locator('.details-topbar-link').click();
-    const plansWithCreatedRecord = await (await detailListRead).json() as { id: string }[];
-    expect(plansWithCreatedRecord.map((plan) => plan.id))
-      .toEqual(expect.arrayContaining([...preservedPlanIds, created.id]));
-    await page.getByRole('link', { name: `Open ${savedName} in Amsterdam` }).click();
+test('keeps maximum-length plan names aligned in cards and the current plan banner', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  const plans = ['W'.repeat(30), 'My day out', 'A'.repeat(30), 'A quiet afternoon', 'Rotterdam walk', 'Utrecht day'].map((name, index) => ({
+    id: randomUUID(), name, description: '', cityId: index % 2 === 0 ? 'amsterdam' : 'rotterdam',
+    placeIds: ['amsterdam-relation-3580875'], createdAt: '2026-11-14T10:00:00Z', updatedAt: '2026-11-14T10:00:00Z',
+  }));
+  await page.route('**/api/plans', route => route.fulfill({ json: plans }));
+  for (const plan of plans) await page.route(`**/api/plans/${plan.id}`, route => route.fulfill({ json: plan }));
+  await page.goto('/plans/new?city=amsterdam');
+  await expect(page.locator('#plan-name')).toHaveAttribute('maxlength', '30');
+  await expect(page.locator('#plan-description')).toHaveAttribute('maxlength', '500');
+  await page.locator('#plan-name').fill('n'.repeat(31));
+  await page.locator('#plan-description').fill('d'.repeat(501));
+  await expect(page.locator('#plan-name')).toHaveValue('n'.repeat(30));
+  await expect(page.locator('#plan-description')).toHaveValue('d'.repeat(500));
+  await expect(page.locator('label[for="plan-description"] small')).toHaveText('500 / 500');
+  await expect(page.locator('label[for="plan-description"]')).not.toContainText('Optional');
+  await expect(page.locator('.editor-validation')).toHaveCount(0);
+
+  for (const viewport of [
+    { width: 1920, height: 1080 }, { width: 1440, height: 900 }, { width: 1024, height: 768 },
+    { width: 390, height: 844 }, { width: 360, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/plans');
+    const cards = page.locator('.saved-plan-card');
+    await expect(cards).toHaveCount(6);
+    for (let index = 0; index < 2; index++) {
+      const card = cards.nth(index);
+      const title = card.locator('h2');
+      await expect(title).toHaveAttribute('title', plans[index].name);
+      expect(await title.evaluate(element => element.clientHeight <= parseFloat(getComputedStyle(element).lineHeight) * 2 + 1)).toBe(true);
+      const cardBox = (await card.boundingBox())!;
+      const cover = (await card.locator('.saved-plan-card__cover').boundingBox())!;
+      const dates = (await card.locator('.saved-plan-card__dates').boundingBox())!;
+      expect(cover.y + cover.height).toBeLessThanOrEqual(dates.y + 1);
+      expect(dates.y + dates.height).toBeLessThanOrEqual(cardBox.y + cardBox.height);
+    }
+    if (viewport.width > 600) {
+      const first = (await cards.nth(0).locator('.saved-plan-card__dates').boundingBox())!;
+      const second = (await cards.nth(1).locator('.saved-plan-card__dates').boundingBox())!;
+      expect(Math.abs(first.y - second.y)).toBeLessThanOrEqual(1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if ([1440, 390].includes(viewport.width)) await page.screenshot({ path: testInfo.outputPath(`name-limit-cards-${viewport.width}.png`) });
+    await page.evaluate(id => sessionStorage.setItem('hopon:active-plan:v1', id), plans[0].id);
+    await page.goto('/');
+    const panel = page.locator('.draft-panel');
+    await expect(panel.locator('h2')).toHaveText(plans[0].name);
+    expect(await panel.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    const title = (await panel.locator('h2').boundingBox())!;
+    if (viewport.width > 1100) {
+      const actions = (await panel.locator('.draft-panel__actions').boundingBox())!;
+      expect(title.x + title.width).toBeLessThanOrEqual(actions.x);
+    }
+    await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toBeVisible();
+    await panel.scrollIntoViewIfNeeded();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if ([1440, 390].includes(viewport.width)) await page.screenshot({ path: testInfo.outputPath(`name-limit-banner-${viewport.width}.png`) });
+    await page.goto(`/plans/${plans[0].id}`);
+    await expect(page.locator('#saved-plan-name')).toHaveAttribute('maxlength', '30');
+    await expect(page.locator('#saved-plan-description')).toHaveAttribute('maxlength', '500');
+    await expect(page.locator('label[for="saved-plan-description"]')).not.toContainText('Optional');
+    await expect(page.locator('.details-validation')).toHaveCount(0);
+  }
+});
+
+test('keeps plan confirmation and Explore controls clear across screen sizes', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const plan = {
+    id: randomUUID(), name: 'A day to remember', description: 'Original notes', cityId: 'amsterdam',
+    placeIds: [], createdAt: '2026-11-14T10:00:00Z', updatedAt: '2026-11-14T10:00:00Z',
+  };
+  await page.route('**/api/plans', route => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({ json: [plan] });
+  });
+  await page.route(`**/api/plans/${plan.id}`, route => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({ json: plan });
+  });
+  await page.goto('/plans');
+  await seedTabDraft(page, { cityId: 'amsterdam', name: 'My day out', placeIds: [], updatedAt: plan.updatedAt });
+
+  for (const viewport of [
+    { width: 1440, height: 900 }, { width: 1280, height: 720 },
+    { width: 390, height: 844 }, { width: 360, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/');
+    const review = page.getByRole('link', { name: 'Review current plan', exact: true });
+    await expect(review).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Browse freely', exact: true })).toHaveCount(0);
+    const savedPlansLink = page.locator('.saved-plans-link');
+    if (await savedPlansLink.isVisible()) {
+      await savedPlansLink.hover();
+      await expect(savedPlansLink).toHaveCSS('background-color', 'rgb(246, 237, 223)');
+      const arrow = (await savedPlansLink.locator('span').boundingBox())!;
+      const icon = (await savedPlansLink.locator('span svg').boundingBox())!;
+      expect(Math.abs(arrow.y + arrow.height / 2 - icon.y - icon.height / 2)).toBeLessThanOrEqual(1);
+    }
+    const architecture = page.locator('.category-panel').getByRole('button', { name: 'Architecture', exact: true });
+    await architecture.click();
+    await expect(architecture).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('.category-panel').getByRole('button', { name: 'Clear filters', exact: true })).toHaveCount(0);
+    await page.locator('.category-panel').getByRole('button', { name: 'All', exact: true }).click();
+    await review.scrollIntoViewIfNeeded();
+    const count = page.locator('.draft-count');
+    await expect(count).toHaveText('0 stops');
+    const countBox = (await count.boundingBox())!;
+    const reviewBox = (await review.boundingBox())!;
+    expect(Math.abs(countBox.y + countBox.height / 2 - reviewBox.y - reviewBox.height / 2)).toBeLessThanOrEqual(1);
+    const arrowBox = (await review.locator('span').boundingBox())!;
+    const iconBox = (await review.locator('svg').boundingBox())!;
+    expect(Math.abs(arrowBox.x + arrowBox.width / 2 - iconBox.x - iconBox.width / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(arrowBox.y + arrowBox.height / 2 - iconBox.y - iconBox.height / 2)).toBeLessThanOrEqual(1);
+    await expect(page.getByText('Choose places now, or save your plan for later.', { exact: true })).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath(`explore-actions-${viewport.width}.png`) });
+
+    const cardArrow = page.locator('.place-card__arrow').first();
+    if (await cardArrow.isVisible()) {
+      const circle = (await cardArrow.boundingBox())!;
+      const icon = (await cardArrow.locator('svg').boundingBox())!;
+      expect(Math.abs(circle.y + circle.height / 2 - icon.y - icon.height / 2)).toBeLessThanOrEqual(1);
+      expect(Math.abs(circle.x + circle.width / 2 - icon.x - icon.width / 2)).toBeLessThanOrEqual(1);
+    }
+    await openExplorePlaceByName(page, 'Royal Palace');
+    const credit = page.locator('.place-detail__credit');
+    await expect(credit.locator('.place-detail__credit-content')).toBeHidden();
+    await expect(page.locator('.place-detail')).not.toContainText('Used the Commons');
+    await page.screenshot({ path: testInfo.outputPath(`photo-detail-${viewport.width}.png`) });
+    await credit.locator('summary').click();
+    await expect(credit.getByRole('link', { name: 'Photo by Elekes Andor' })).toBeVisible();
+    await expect(credit.getByRole('link', { name: 'CC BY-SA 4.0' })).toBeVisible();
+    await expect(credit).toContainText('Resized and re-encoded from the source; displayed with a crop.');
+    await page.keyboard.press('Escape');
+
+    await page.goto('/plans/new?city=amsterdam');
+    await expect(page.getByText('Places can wait. Your plan is ready to save.', { exact: true })).toHaveCount(0);
+    await expect(page.locator('.plan-editor-heading .plans-intro')).toHaveCount(0);
+    await page.goto(`/plans/${plan.id}`);
+    await page.locator('#saved-plan-description').fill('New notes still being edited');
+    const back = page.locator('.plan-details-heading .plan-back-link');
+    await back.click();
+    const dialog = page.locator('#discard-plan-edits');
+    await expect(dialog.getByRole('heading', { name: 'Unsaved changes', exact: true })).toBeVisible();
+    const keepEditing = dialog.getByRole('button', { name: 'Keep editing', exact: true });
+    const leave = dialog.getByRole('button', { name: 'Leave without saving', exact: true });
+    await expect(keepEditing).toBeFocused();
+    await expect(leave).toBeInViewport();
+    expect(await page.locator('app-confirm-dialog').last().getAttribute('title')).toBeNull();
+    for (const button of [keepEditing, leave]) expect((await button.boundingBox())!.height).toBeGreaterThanOrEqual(48);
+    await page.screenshot({ path: testInfo.outputPath(`unsaved-dialog-${viewport.width}.png`) });
+    await page.keyboard.press('Shift+Tab');
+    await expect(leave).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(page.locator('#saved-plan-description')).toHaveValue('New notes still being edited');
+    await back.click();
+    await leave.click();
+    await expect(page).toHaveURL('/plans');
+    await expect(page.locator('.plans-list-shell footer')).toHaveCount(0);
+    await expect(page.getByRole('link', { name: `Open ${plan.name} in Amsterdam`, exact: true })).toBeVisible();
+    const savedCardArrow = page.locator('.saved-plan-card__arrow').first();
+    const circle = (await savedCardArrow.boundingBox())!;
+    const icon = (await savedCardArrow.locator('svg').boundingBox())!;
+    expect(Math.abs(circle.x + circle.width / 2 - icon.x - icon.width / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(circle.y + circle.height / 2 - icon.y - icon.height / 2)).toBeLessThanOrEqual(1);
+    await page.screenshot({ path: testInfo.outputPath(`saved-plans-${viewport.width}.png`) });
+  }
+});
+
+test('opens the current plan map from the stops panel on desktop and mobile', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  const planId = randomUUID();
+  let plan = {
+    id: planId,
+    name: 'A day across the map',
+    description: 'Keep these notes when adding places.',
+    cityId: 'amsterdam',
+    placeIds: [] as string[],
+    createdAt: '2026-11-14T10:00:00Z',
+    updatedAt: '2026-11-14T10:00:00Z',
+  };
+  await page.route(`**/api/plans/${planId}`, async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON() as {
+        name: string; description: string; cityId: string; placeIds: string[];
+      };
+      expect(body.name).toBe(plan.name);
+      expect(body.description).toBe(plan.description);
+      expect(body.cityId).toBe('amsterdam');
+      plan = { ...plan, placeIds: body.placeIds };
+    } else {
+      expect(route.request().method()).toBe('GET');
+    }
+    await route.fulfill({ json: plan });
+  });
+
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+    plan = { ...plan, placeIds: [] };
+    await page.setViewportSize(viewport);
+    await page.goto(`/plans/${planId}`);
+    const exploreMap = page.locator('.details-stops').getByRole('button', { name: 'Explore map', exact: true });
+    const save = page.getByRole('button', { name: 'Save changes', exact: true });
+    const usePlan = page.locator('.details-form-actions').getByRole('button', { name: 'Use this plan', exact: true });
+    await expect(usePlan).toBeEnabled();
+    await expect(page.locator('.details-city-label > span')).toHaveCount(0);
+    await expect(exploreMap).toBeEnabled();
+    const globe = exploreMap.locator('img');
+    await expect.poll(() => globe.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
+    await exploreMap.scrollIntoViewIfNeeded();
+    const mapBounds = (await exploreMap.boundingBox())!;
+    const headingBounds = (await page.locator('.details-section-heading').boundingBox())!;
+    expect(mapBounds.y).toBeGreaterThanOrEqual(headingBounds.y);
+    expect(mapBounds.y + mapBounds.height).toBeLessThanOrEqual(headingBounds.y + headingBounds.height + 1);
+    await usePlan.scrollIntoViewIfNeeded();
+    const keepBounds = (await usePlan.boundingBox())!;
+    const saveBounds = (await save.boundingBox())!;
+    expect(Math.abs(keepBounds.y - saveBounds.y)).toBeLessThanOrEqual(1);
+    expect(keepBounds.x).toBeGreaterThan(saveBounds.x);
+    const dates = page.locator('.details-form-actions .plan-details-meta');
+    await expect(dates.locator('time')).toHaveCount(2);
+    if (viewport.width >= 1000) {
+      const datesBox = (await dates.boundingBox())!;
+      const actionsBox = (await page.locator('.details-form-actions').boundingBox())!;
+      expect(datesBox.y - actionsBox.y).toBeLessThanOrEqual(8);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: testInfo.outputPath(`saved-plan-map-button-${viewport.width}.png`) });
+
+    await exploreMap.click();
+    await expect(page).toHaveURL(`/?plan=${planId}#map-region`);
+    await expect(page.locator('#map-region')).toBeFocused();
+    await expect(page.locator('.draft-panel')).toContainText(plan.name);
+    for (const [index, name] of ['Erasmus Bridge', 'Dom Tower'].entries()) {
+      await openExplorePlaceByName(page, name);
+      const updatedResponse = page.waitForResponse(response =>
+        response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/plans/${planId}`);
+      await page.locator('.place-detail').getByRole('button', { name: 'Add to saved plan', exact: true }).click();
+      expect((await updatedResponse).status()).toBe(200);
+      await expect(page.locator('.draft-count')).toHaveText(`${index + 1} / 12`);
+      await expect(page.locator('.draft-feedback')).toContainText(`Added 1 place to ${plan.name}`);
+    }
+    expect(plan.placeIds).toHaveLength(2);
+    await page.keyboard.press('Escape');
+    if (viewport.width < 760) {
+      await page.locator('.bottom-nav').getByRole('link', { name: 'Map', exact: true }).click();
+      await expect(page).toHaveURL(`/?plan=${planId}#map-region`);
+      await expect(page.locator('.draft-panel')).toContainText(plan.name);
+    }
+    await page.getByRole('link', { name: 'Review current plan', exact: true }).click();
+    await expect(page).toHaveURL(`/plans/${planId}`);
+    await expect(page.locator('#saved-plan-description')).toHaveValue(plan.description);
+    await expect(page.locator('.details-stop')).toHaveCount(2);
+    await expect(page.locator('.details-stop').first()).toContainText('Rotterdam');
+    await expect(page.locator('.details-stop').last()).toContainText('Utrecht');
+    const selectedPlaceIds = [...plan.placeIds];
+    await expect(exploreMap).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath(`saved-plan-map-populated-${viewport.width}.png`) });
+    await exploreMap.click();
+    await expect(page).toHaveURL(`/?plan=${planId}#map-region`);
+    await expect(page.locator('.draft-panel')).toContainText('2 / 12');
+    await page.getByRole('link', { name: 'Review current plan', exact: true }).click();
+    await expect(page.locator('.details-stop')).toHaveCount(2);
+    expect(plan.placeIds).toEqual(selectedPlaceIds);
+    await usePlan.click();
+    await expect(page).toHaveURL(`/?plan=${planId}#map-region`);
+    await page.goto('/');
+    await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', `/plans/${planId}`);
     await page.reload();
-    await expect(page.locator('#saved-plan-name')).toHaveValue(savedName);
-    await expect(page.locator('.details-stop__copy h3')).toHaveText([
-      amsterdamPlaces.find((place) => place.id === createdOrder[0])!.name,
-      amsterdamPlaces.find((place) => place.id === createdOrder[1])!.name,
-      amsterdamPlaces.find((place) => place.id === createdOrder[2])!.name,
-    ]);
+    await expect(page.locator('.draft-panel')).toContainText(plan.name);
+    expect(plan.placeIds).toEqual(selectedPlaceIds);
+  }
+});
 
-    const updatedName = `Amsterdam, one stop at a time ${randomUUID()}`;
-    await page.locator('#saved-plan-name').fill(updatedName);
-    const updatedOrder = [createdOrder[0], createdOrder[2], createdOrder[1]];
-    await page.getByRole('button', {
-      name: `Move ${amsterdamPlaces.find((place) => place.id === createdOrder[2])!.name} up`,
-    }).click();
-    const putResponsePromise = page.waitForResponse((response) =>
-      response.request().method() === 'PUT' && new URL(response.url()).pathname === `/api/plans/${created.id}`,
-    );
-    await page.getByRole('button', { name: 'Save changes' }).click();
-    const putResponse = await putResponsePromise;
-    expect(putResponse.status()).toBe(200);
-    const updated = await putResponse.json() as { name: string; cityId: string; placeIds: string[] };
-    expect(updated).toMatchObject({ name: updatedName, cityId: 'amsterdam', placeIds: updatedOrder });
+test('autosaves map additions and allocates numbered names without a manual save', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const owned: string[] = [];
+  let failed = false;
+  try {
+    const initial = await (await page.request.get('/api/plans')).json() as { name: string }[];
+    const names = new Set(initial.map(plan => plan.name.toLowerCase()));
+    const availableName = () => {
+      let name = 'My day out';
+      for (let index = 1; names.has(name.toLowerCase()); index++) name = `My day out-${index}`;
+      names.add(name.toLowerCase());
+      return name;
+    };
+    for (const [index, place] of ['Royal Palace', 'Dom Tower'].entries()) {
+      await page.goto('/plans/new?city=amsterdam');
+      await expect(page.locator('#plan-name')).toHaveValue('My day out');
+      await page.locator('.editor-cancel').click();
+      await openExplorePlaceByName(page, place);
+      const pending = page.waitForResponse(response => response.request().method() === 'PUT'
+        && new URL(response.url()).pathname.endsWith('/autosave'));
+      await page.locator('.place-detail').getByRole('button', { name: 'Add to plan', exact: true }).click();
+      const response = await pending;
+      expect(response.status()).toBe(200);
+      const saved = await response.json() as { id: string; name: string; placeIds: string[] };
+      owned.push(saved.id);
+      expect(saved.name).toBe(availableName());
+      await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', `/plans/${saved.id}`);
+      expect(await page.evaluate(() => sessionStorage.getItem('hopon:draft:v1'))).toBeNull();
+      expect(await page.evaluate(() => sessionStorage.getItem('hopon:active-plan:v1'))).toBe(saved.id);
+      if (index === 0) {
+        await openExplorePlaceByName(page, 'Erasmus Bridge');
+        const updated = page.waitForResponse(response => response.request().method() === 'PUT'
+          && new URL(response.url()).pathname === `/api/plans/${saved.id}`);
+        await page.locator('.place-detail').getByRole('button', { name: 'Add to saved plan', exact: true }).click();
+        expect((await updated).status()).toBe(200);
+        await expect(page.locator('.draft-count')).toHaveText('2 / 12');
+      }
+      await page.reload();
+      await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', `/plans/${saved.id}`);
+      await page.getByRole('link', { name: 'Review current plan', exact: true }).click();
+      await expect(page.locator('.details-stop')).toHaveCount(index === 0 ? 2 : 1);
+      await page.screenshot({ path: testInfo.outputPath(`autosaved-plan-${index}.png`) });
+    }
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
+});
+
+test('explains six-plan capacity, permits updates and resumes autosave after a slot is freed', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const owned: string[] = [];
+  let failed = false;
+  try {
+    const initial = await (await page.request.get('/api/plans')).json() as { id: string }[];
+    expect(initial.length).toBeLessThan(6);
+    for (let count = initial.length; count < 6; count++) {
+      const response = await page.request.post('/api/plans', { data: {
+        name: `Capacity check ${randomUUID().slice(0, 8)}`, description: '', cityId: 'amsterdam', placeIds: [],
+      } });
+      expect(response.status()).toBe(201);
+      owned.push((await response.json() as { id: string }).id);
+    }
+    await page.goto('/plans');
+    await expect(page.getByRole('button', { name: '6 / 6 plans', exact: true })).toBeDisabled();
+    await expect(page.locator('#plan-capacity-message')).toContainText('use an existing plan, or delete one');
+    await page.goto(`/plans/${owned[0]}`);
+    await page.getByRole('button', { name: 'Use this plan', exact: true }).click();
+    await openExplorePlaceByName(page, 'Erasmus Bridge');
+    const update = page.waitForResponse(response => response.request().method() === 'PUT'
+      && new URL(response.url()).pathname === `/api/plans/${owned[0]}`);
+    await page.locator('.place-detail').getByRole('button', { name: 'Add to saved plan', exact: true }).click();
+    expect((await update).status()).toBe(200);
+    await expect(page.locator('.draft-count')).toHaveText('1 / 12');
+
+    await page.goto('/plans/new?city=amsterdam');
+    const manual = page.waitForResponse(response => response.request().method() === 'POST'
+      && new URL(response.url()).pathname === '/api/plans');
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    expect((await manual).status()).toBe(409);
+    await expect(page.locator('.editor-state--error')).toContainText('Use an existing plan or delete one');
+    await page.locator('.editor-cancel').click();
+    await openExplorePlaceByName(page, 'Dom Tower');
+    const blocked = page.waitForResponse(response => response.request().method() === 'PUT'
+      && new URL(response.url()).pathname.endsWith('/autosave'));
+    await page.locator('.place-detail').getByRole('button', { name: 'Add to plan', exact: true }).click();
+    expect((await blocked).status()).toBe(409);
+    await expect(page.locator('.autosave-feedback')).toContainText('6 of 6 saved plans');
+    await expect(page.locator('.autosave-feedback').getByRole('link', { name: 'Use or delete a saved plan', exact: true })).toHaveAttribute('href', '/plans');
+    const pendingId = await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1')!).autosaveId as string);
+    owned.push(pendingId);
+    expect((await (await page.request.get('/api/plans')).json()).length).toBe(6);
+    await page.keyboard.press('Escape');
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.locator('.autosave-feedback').scrollIntoViewIfNeeded();
+    await page.screenshot({ path: testInfo.outputPath('six-plan-limit-mobile.png') });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    expect((await page.request.delete(`/api/plans/${owned[0]}`)).status()).toBe(204);
+    const retried = page.waitForResponse(response => response.request().method() === 'PUT'
+      && new URL(response.url()).pathname === `/api/plans/${pendingId}/autosave`);
+    await page.getByRole('button', { name: 'Retry saving', exact: true }).click();
+    expect((await retried).status()).toBe(200);
+    await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', `/plans/${pendingId}`);
+    expect((await (await page.request.get('/api/plans')).json()).length).toBe(6);
+  } catch (error) { failed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, owned, failed); }
+});
+
+test('uses the current plan across all three cities with the real API', async ({ page }) => {
+  test.setTimeout(90_000);
+  const ids: string[] = [];
+  let testFailed = false;
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/plans/new?city=amsterdam');
+    const name = `Current plan ${randomUUID().slice(0, 8)}`;
+    await page.locator('#plan-name').fill(name);
+    await page.locator('#plan-description').fill('Keep these notes across all three cities.');
+    await page.locator('.editor-cancel').click();
+    const review = page.getByRole('link', { name: 'Review current plan', exact: true });
+    await expect(review).toHaveAttribute('href', '/plans/new?city=amsterdam');
+    await review.click();
+    const createdResponse = page.waitForResponse(response =>
+      response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans');
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    const response = await createdResponse;
+    expect(response.status()).toBe(201);
+    const created = await response.json() as { id: string; description: string };
+    ids.push(created.id);
+    await expect(page).toHaveURL(`/plans/${created.id}`);
+    expect(await page.evaluate(() => sessionStorage.getItem('hopon:active-plan:v1'))).toBe(created.id);
+    const alternateResponse = await page.request.post('/api/plans', {
+      data: { name: `Another plan ${randomUUID().slice(0, 8)}`, description: '', cityId: 'rotterdam', placeIds: [] },
+    });
+    expect(alternateResponse.status()).toBe(201);
+    const alternate = await alternateResponse.json() as { id: string };
+    ids.push(alternate.id);
+    await page.goto(`/plans/${alternate.id}`);
+    await page.getByRole('button', { name: 'Use this plan', exact: true }).click();
+    await expect(page).toHaveURL(`/?plan=${alternate.id}#map-region`);
+    await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', `/plans/${alternate.id}`);
+    await page.goto(`/plans/${created.id}`);
+    await page.getByRole('button', { name: 'Use this plan', exact: true }).click();
+    await expect(page).toHaveURL(`/?plan=${created.id}#map-region`);
+
+    for (const placeName of ['Royal Palace', 'Erasmus Bridge', 'Dom Tower']) {
+      await openExplorePlaceByName(page, placeName);
+      const updatedResponse = page.waitForResponse(update =>
+        update.request().method() === 'PUT' && new URL(update.url()).pathname === `/api/plans/${created.id}`);
+      await page.locator('.place-detail').getByRole('button', { name: 'Add to saved plan', exact: true }).click();
+      const updated = await updatedResponse;
+      expect(updated.status(), await updated.text()).toBe(200);
+      await expect(page.locator('.draft-feedback')).toContainText(`Added 1 place to ${name}`);
+    }
+    await page.keyboard.press('Escape');
+    await page.locator('.saved-plans-link').click();
+    await page.getByRole('link', { name: 'Back to places', exact: true }).click();
+    await expect(page).toHaveURL('/');
+    await expect(review).toHaveAttribute('href', `/plans/${created.id}`);
+    await expect(page.locator('.draft-count')).toHaveText('3 / 12');
     await page.reload();
-    await expect(page.locator('#saved-plan-name')).toHaveValue(updatedName);
-    await expect(page.locator('.details-stop__copy h3')).toHaveText([
-      amsterdamPlaces.find((place) => place.id === updatedOrder[0])!.name,
-      amsterdamPlaces.find((place) => place.id === updatedOrder[1])!.name,
-      amsterdamPlaces.find((place) => place.id === updatedOrder[2])!.name,
-    ]);
-
-    const deleteResponsePromise = page.waitForResponse((response) =>
-      response.request().method() === 'DELETE' && new URL(response.url()).pathname === `/api/plans/${created.id}`,
-    );
-    const finalListRead = page.waitForResponse((response) => isPlansListRead(response));
-    await page.locator('.plan-details-heading__actions .plans-button--danger').click();
-    const confirmation = page.locator('#delete-plan-confirmation');
-    await expect(confirmation).toBeVisible();
-    await confirmation.getByRole('button', { name: 'Delete plan', exact: true }).click();
-    const deleteResponse = await deleteResponsePromise;
-    expect(deleteResponse.status()).toBe(204);
-    expect(await deleteResponse.text()).toBe('');
-    await expect(page).toHaveURL(/\/plans$/);
-    const plansAfterDelete = await (await finalListRead).json() as { id: string }[];
-    expect(plansAfterDelete.map((plan) => plan.id)).toEqual(expect.arrayContaining(preservedPlanIds));
-    expect(plansAfterDelete.some((plan) => plan.id === created.id)).toBe(false);
-    await expect(page.locator('.plans-empty')).toHaveCount(plansAfterDelete.length === 0 ? 1 : 0);
-    const missingStatus = await page.evaluate(async (id) => (await fetch(`/api/plans/${id}`)).status, created.id);
-    expect(missingStatus).toBe(404);
+    await expect(page.locator('.draft-panel')).toContainText(name);
+    await review.click();
+    await expect(page.locator('.details-stop')).toHaveCount(3);
+    await expect(page.locator('#saved-plan-description')).toHaveValue(created.description);
+    for (const city of ['Amsterdam', 'Rotterdam', 'Utrecht']) {
+      await expect(page.locator('.details-stop__copy small').filter({ hasText: city })).toHaveCount(1);
+    }
+    const removed = await page.request.delete(`/api/plans/${created.id}`);
+    expect(removed.status()).toBe(204);
+    await page.goto('/');
+    await expect(page.locator('.draft-count')).toContainText('0 stops');
+    expect(await page.evaluate(() => sessionStorage.getItem('hopon:active-plan:v1'))).toBeNull();
   } catch (error) {
     testFailed = true;
     throw error;
   } finally {
-    await cleanupCreatedPlans(page, testPlanIds, testFailed);
+    await cleanupCreatedPlans(page, ids, testFailed);
   }
 });
 
-test('keeps cross-city drafts separate through explicit keep and replace decisions', async ({ page }) => {
+test('switches the starting city without losing cross-city stops or scrolling', async ({ page }, testInfo) => {
   test.setTimeout(60_000);
-  await page.setViewportSize({ width: 390, height: 844 });
-  const amsterdamPlaces = await getActualPlaces(page, 'amsterdam');
-  const rotterdamPlaces = await getActualPlaces(page, 'rotterdam');
-  await page.goto('/');
-  const amsterdamName = await addExplorePlaceByName(page, 'Royal Palace');
-  const originalDraft = await page.evaluate(() =>
-    JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
-      cityId: string;
-      name: string;
-      placeIds: string[];
-    } | null,
-  );
-  expect(originalDraft?.cityId).toBe('amsterdam');
-  expect(originalDraft?.placeIds).toHaveLength(1);
-
-  const rotterdamName = 'Erasmus Bridge';
-  await openExplorePlaceByName(page, rotterdamName);
-  await expect(page.locator('.place-detail')).toContainText('Rotterdam');
-  const addRotterdam = page.locator('.place-detail').getByRole('button', { name: 'Add to plan' });
-  await addRotterdam.click();
-  const conflict = page.getByRole('region', { name: 'Keep the existing draft?' });
-  await expect(conflict).toBeVisible();
-  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
-    .toMatchObject({ cityId: 'amsterdam', placeIds: originalDraft!.placeIds });
-  await conflict.getByRole('button', { name: 'Keep existing' }).click();
-  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
-    .toMatchObject({ cityId: 'amsterdam', placeIds: originalDraft!.placeIds });
-
-  await addRotterdam.click();
-  await expect(conflict).toBeVisible();
-  await conflict.getByRole('button', { name: 'Start new for Rotterdam' }).click();
-  const replacementDraft = await page.evaluate(() =>
-    JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null') as {
-      cityId: string;
-      placeIds: string[];
-    } | null,
-  );
-  expect(replacementDraft?.cityId).toBe('rotterdam');
-  expect(replacementDraft?.placeIds).toHaveLength(1);
-  expect(replacementDraft!.placeIds.every((id) => rotterdamPlaces.some((place) => place.id === id))).toBe(true);
-  expect(replacementDraft!.placeIds.some((id) => amsterdamPlaces.some((place) => place.id === id))).toBe(false);
-  expect(amsterdamName).not.toBe(rotterdamName);
-
-  const testPlanIds: string[] = [];
-  let testFailed = false;
-  try {
-    const listRead = page.waitForResponse((response) => isPlansListRead(response));
-    await page.locator('app-main-navigation a[href="/plans"]').click();
-    await listRead;
-    await page.getByRole('link', { name: 'Create a plan', exact: true }).click();
-    const savedPlanName = `Rotterdam without mixing cities ${randomUUID()}`;
-    await page.locator('#plan-name').fill(savedPlanName);
-    const postResponsePromise = page.waitForResponse((response) =>
-      response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans',
-    );
-    await page.getByRole('button', { name: 'Save plan' }).click();
-    const postResponse = await postResponsePromise;
-    if (postResponse.status() === 201) {
-      const createdIdFromLocation = planIdFromLocation(postResponse.headers()['location']);
-      if (createdIdFromLocation !== null) {
-        testPlanIds.push(createdIdFromLocation);
+  let planWrites = 0;
+  page.on('request', request => {
+    if (new URL(request.url()).pathname.startsWith('/api/plans') && request.method() !== 'GET') planWrites++;
+  });
+  for (const viewport of [
+    { width: 1440, height: 720 },
+    { width: 1280, height: 600 },
+    { width: 390, height: 844 },
+    { width: 360, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/plans/new?city=amsterdam');
+    await page.locator('#plan-name').fill('An afternoon together');
+    for (const cityId of ['rotterdam', 'utrecht', 'amsterdam']) {
+      await page.locator('#plan-city').selectOption(cityId);
+      await expect(page).toHaveURL(new RegExp(`city=${cityId}`));
+      await expect(page.locator('#plan-city')).toHaveValue(cityId);
+      await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+      await expect(page.locator('#plan-name')).toHaveValue('An afternoon together');
+      await expect(page.locator('.editor-conflict')).toHaveCount(0);
+      expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? '{}')))
+        .toMatchObject({ cityId, name: 'An afternoon together', placeIds: [] });
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width >= 1000) {
+      const settings = await page.locator('.editor-settings').evaluate(element => ({ scroll: element.scrollHeight, visible: element.clientHeight }));
+      expect(settings.scroll).toBeLessThanOrEqual(settings.visible);
+      for (const row of await page.locator('.editor-settings .plan-settings-row:not(.plan-settings-row--description)').all()) {
+        expect((await row.boundingBox())!.height).toBeLessThanOrEqual(60);
       }
     }
-    if (postResponse.status() !== 201) {
-      throw new Error(`Real plan POST returned ${postResponse.status()}: ${await postResponse.text()}`);
+    await page.screenshot({ path: testInfo.outputPath(`empty-city-switch-${viewport.width}.png`) });
+    await page.reload();
+    await expect(page.locator('#plan-name')).toHaveValue('An afternoon together');
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+  }
+
+  const [amsterdamPlaces, rotterdamPlaces] = await Promise.all([
+    getActualPlaces(page, 'amsterdam'),
+    getActualPlaces(page, 'rotterdam'),
+  ]);
+  const mixedPlaceIds = [amsterdamPlaces[0].id, rotterdamPlaces[0].id];
+  await page.setViewportSize({ width: 1440, height: 720 });
+  await seedTabDraft(page, { cityId: 'amsterdam', name: 'Keep these places', placeIds: mixedPlaceIds, updatedAt: '2026-11-14T10:00:00Z' });
+  await page.reload();
+  await expect(page.locator('.editor-place')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+  await page.locator('#plan-city').selectOption('rotterdam');
+  await expect(page.locator('#plan-city')).toHaveValue('rotterdam');
+  await expect(page.locator('#plan-name')).toHaveValue('Keep these places');
+  await expect(page.locator('.editor-place')).toHaveCount(2);
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null')))
+    .toMatchObject({ cityId: 'rotterdam', placeIds: mixedPlaceIds });
+  await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+  await expect(page.locator('.editor-conflict')).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('mixed-city-starting-city-switch.png') });
+  expect(planWrites).toBe(0);
+});
+
+test('renders draft stops as a compact table on desktop and mobile', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const catalogs = await Promise.all(['amsterdam', 'rotterdam', 'utrecht'].map(city => getActualPlaces(page, city)));
+  const places = catalogs.flatMap(catalog => catalog.slice(0, 4));
+  expect(places).toHaveLength(12);
+  await page.goto('/plans/new?city=amsterdam');
+
+  for (const viewport of [
+    { width: 1440, height: 900 }, { width: 1280, height: 600 },
+    { width: 390, height: 844 }, { width: 360, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const count of [1, 12]) {
+      const selected = places.slice(0, count);
+      await seedTabDraft(page, {
+        cityId: 'amsterdam', name: 'My day out', description: 'Keep the same draft and description.',
+        placeIds: selected.map(place => place.id), updatedAt: '2026-11-14T12:00:00.000Z',
+      });
+      await page.reload();
+      const table = page.getByRole('table', { name: 'Stops in plan', exact: true });
+      const rows = table.locator('tbody tr');
+      await expect(rows).toHaveCount(count);
+      await expect(rows.locator('h3')).toHaveText(selected.map(place => place.name));
+      await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+      await expect(rows.first().getByRole('button', { name: `Move ${selected[0].name} up`, exact: true })).toBeDisabled();
+      await expect(rows.last().getByRole('button', { name: `Move ${selected.at(-1)!.name} down`, exact: true })).toBeDisabled();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      if (viewport.width >= 1000) {
+        const lastRow = (await rows.last().boundingBox())!;
+        const list = (await page.locator('.editor-place-list').boundingBox())!;
+        const actions = (await page.locator('.editor-actions--submit').boundingBox())!;
+        expect(lastRow.y + lastRow.height).toBeLessThanOrEqual(list.y + list.height - 1);
+        expect(lastRow.y + lastRow.height).toBeLessThanOrEqual(actions.y);
+        expect((await rows.first().boundingBox())!.height).toBeLessThan(60);
+      } else {
+        const remove = rows.first().getByRole('button', { name: `Remove ${selected[0].name}`, exact: true });
+        const target = (await remove.boundingBox())!;
+        expect(target.width).toBeGreaterThanOrEqual(44);
+        expect(target.height).toBeGreaterThanOrEqual(44);
+      }
+      await table.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`draft-table-${count}-${viewport.width}.png`) });
+      if (count === 12) {
+        await rows.first().getByRole('button', { name: `Move ${selected[0].name} down`, exact: true }).click();
+        await expect(rows.locator('h3')).toHaveText([selected[1], selected[0], ...selected.slice(2)].map(place => place.name));
+        await rows.last().getByRole('button', { name: `Remove ${selected[11].name}`, exact: true }).click();
+        await expect(rows).toHaveCount(11);
+        await page.reload();
+        await expect(rows).toHaveCount(11);
+        await expect(rows.locator('h3')).toHaveText([selected[1], selected[0], ...selected.slice(2, 11)].map(place => place.name));
+        await expect(page.locator('#plan-description')).toHaveValue('Keep the same draft and description.');
+      }
     }
-    const created = await postResponse.json() as { id: string; cityId: string; placeIds: string[] };
-    expect(postResponse.headers()['location']).toBe(`/api/plans/${created.id}`);
+  }
+});
+
+test('keeps plan settings separate from save actions in short desktop and mobile viewports', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  const places = await getActualPlaces(page, 'amsterdam');
+  const id = randomUUID();
+  let placeIds: string[] = [];
+  await page.route(`**/api/plans/${id}`, route => route.fulfill({ json: {
+    id,
+    name: 'A day by the canals',
+    cityId: 'amsterdam',
+    placeIds,
+    createdAt: '2026-11-14T08:00:00Z',
+    updatedAt: '2026-11-14T08:00:00Z',
+  } }));
+
+  for (const viewport of [
+    { width: 1440, height: 900 },
+    { width: 1440, height: 720 },
+    { width: 1280, height: 600 },
+    { width: 1024, height: 600 },
+    { width: 768, height: 1024 },
+    { width: 720, height: 480 },
+    { width: 390, height: 844 },
+    { width: 360, height: 640 },
+  ]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/plans/new?city=amsterdam');
+    await expect(page.locator('#plan-name')).toHaveValue('My day out');
+    await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+    const backToPlaces = page.locator('.plan-editor-heading').getByRole('link', { name: 'Back to places', exact: true });
+    await expect(backToPlaces).toHaveAttribute('href', '/');
+    expect((await backToPlaces.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+    if (viewport.width >= 1000) {
+      const setup = await page.locator('.editor-settings').boundingBox();
+      const actions = await page.locator('.editor-actions--submit').boundingBox();
+      expect(setup!.y + setup!.height).toBeLessThanOrEqual(actions!.y);
+      expect(actions!.y + actions!.height).toBeLessThanOrEqual(viewport.height);
+      expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(viewport.height);
+      const eyebrow = (await page.locator('.plan-editor-heading .plans-eyebrow').boundingBox())!;
+      const stopsEyebrow = (await page.locator('.editor-section-heading .plans-eyebrow').boundingBox())!;
+      expect(Math.abs(eyebrow.y - stopsEyebrow.y)).toBeLessThanOrEqual(1);
+    }
+    if (viewport.width === 1440) {
+      const setup = await page.locator('.editor-settings').evaluate(element => ({ scroll: element.scrollHeight, visible: element.clientHeight }));
+      expect(setup.scroll).toBeLessThanOrEqual(setup.visible);
+    }
+    if (viewport.width === 1440 && viewport.height === 720 || viewport.width === 390) {
+      await page.screenshot({ path: testInfo.outputPath(`create-${viewport.width}.png`) });
+    }
+
+    for (const count of [0, 12]) {
+      placeIds = places.slice(0, count).map(place => place.id);
+      await page.goto(`/plans/${id}`);
+      await expect(page.locator('.details-stop')).toHaveCount(count);
+      if (count === 0) await expect(page.locator('#add-saved-stop option')).not.toHaveCount(1);
+      else await expect(page.locator('#add-saved-stop')).toHaveCount(0);
+      const backToPlans = page.locator('.plan-details-heading').getByRole('link', { name: 'Back to Saved Plans', exact: true });
+      await expect(backToPlans).toHaveAttribute('href', '/plans');
+      await expect(page.locator('.details-form-actions').getByRole('button', { name: 'Use this plan', exact: true })).toBeEnabled();
+      await expect(page.locator('.details-stops').getByRole('button', { name: 'Explore map', exact: true })).toBeEnabled();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      if (viewport.width >= 1000) {
+        const settings = await page.locator('.details-settings').boundingBox();
+        const stops = await page.locator('.details-stops').boundingBox();
+        const actions = await page.locator('.details-form-actions').boundingBox();
+        expect(settings!.y + settings!.height).toBeLessThanOrEqual(actions!.y);
+        expect(stops!.x).toBeGreaterThanOrEqual(actions!.x + actions!.width);
+        expect(stops!.y + stops!.height).toBeLessThanOrEqual(viewport.height);
+        expect(actions!.y + actions!.height).toBeLessThanOrEqual(viewport.height);
+        expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(viewport.height);
+        if (viewport.width === 1440 && count === 0) {
+          const settingsSize = await page.locator('.details-settings').evaluate(element => ({ scroll: element.scrollHeight, visible: element.clientHeight }));
+          expect(settingsSize.scroll).toBeLessThanOrEqual(settingsSize.visible);
+        }
+      }
+      await page.locator('.details-add-stop-inline').scrollIntoViewIfNeeded();
+      const picker = await page.locator('.details-add-stop-inline').boundingBox();
+      const actions = await page.locator('.details-form-actions').boundingBox();
+      expect(picker!.y + picker!.height).toBeLessThanOrEqual(actions!.y);
+      if (count === 12) {
+        await expect(page.getByText('12-place limit reached.', { exact: false })).toBeVisible();
+        if (viewport.width >= 1000) {
+          const table = await page.locator('.details-stop-list').evaluate(element => ({ scroll: element.scrollHeight, visible: element.clientHeight }));
+          expect(table.scroll).toBeLessThanOrEqual(table.visible);
+          const listBounds = (await page.locator('.details-stop-list').boundingBox())!;
+          for (const row of await page.locator('.details-stop').all()) {
+            const bounds = (await row.boundingBox())!;
+            expect(bounds.y).toBeGreaterThanOrEqual(listBounds.y);
+            expect(bounds.y + bounds.height).toBeLessThanOrEqual(listBounds.y + listBounds.height + 1);
+          }
+        }
+      } else {
+        await page.locator('#add-saved-stop').selectOption({ index: 1 });
+        await page.getByRole('button', { name: 'Add place', exact: true }).click();
+        await expect(page.locator('.details-stop')).toHaveCount(1);
+        await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeEnabled();
+        if (viewport.width === 1440 && viewport.height === 900) {
+          await backToPlans.click();
+          const discard = page.locator('#discard-plan-edits');
+          await expect(discard).toBeVisible();
+          await discard.getByRole('button', { name: 'Keep editing', exact: true }).click();
+          await expect(page.locator('.details-stop')).toHaveCount(1);
+        }
+        await page.locator('.details-remove-button').click();
+        await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+      }
+      if (viewport.width === 1440 && viewport.height === 720 || viewport.width === 390) {
+        await page.screenshot({ path: testInfo.outputPath(`details-${count}-${viewport.width}.png`) });
+      }
+    }
+  }
+  await page.goto('/plans/new?city=amsterdam');
+  await page.locator('#plan-name').fill('A day worth keeping');
+  await page.locator('.plan-editor-heading .plan-back-link').focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL('/');
+  await expect(page.locator('.draft-name')).toHaveText('A day worth keeping');
+});
+
+test('saves optional multiline descriptions across desktop and mobile and keeps one Netherlands city', async ({ page }, testInfo) => {
+  test.setTimeout(90_000);
+  const ids: string[] = [];
+  let testFailed = false;
+  const name = `Description check ${randomUUID().slice(0, 8)}`;
+  const description = 'Canals & cafés.\nMeet at 10:00 <near the bridge>.';
+  try {
+    for (const viewport of [
+      { width: 1440, height: 720 }, { width: 1280, height: 600 },
+      { width: 390, height: 844 }, { width: 360, height: 640 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await page.goto('/plans/new?city=amsterdam');
+      await expect(page.locator('#plan-country')).toHaveValue('netherlands');
+      await expect(page.locator('#plan-country option')).toHaveText(['Netherlands']);
+      await page.locator('#plan-name').fill(name);
+      await page.locator('#plan-description').fill(description);
+      await page.locator('#plan-city').selectOption('rotterdam');
+      await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+      await expect(page.locator('#plan-description')).toHaveValue(description);
+      await page.reload();
+      await expect(page.locator('#plan-description')).toHaveValue(description);
+      await expect(page.getByRole('button', { name: 'Save plan', exact: true })).toBeEnabled();
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      if (viewport.width >= 1000) {
+        const size = await page.locator('.editor-settings').evaluate(el => ({ visible: el.clientHeight, scroll: el.scrollHeight }));
+        expect(size.scroll).toBeLessThanOrEqual(size.visible);
+        expect(await page.evaluate(() => document.documentElement.scrollHeight)).toBeLessThanOrEqual(viewport.height);
+      } else {
+        expect(await page.locator('#plan-description').evaluate(el => parseFloat(getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+      }
+      await page.screenshot({ path: testInfo.outputPath(`description-create-${viewport.width}.png`) });
+    }
+    const post = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans');
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    const response = await post;
+    expect(response.status()).toBe(201);
+    const created = await response.json() as { id: string; description: string; cityId: string };
+    ids.push(created.id);
+    expect(created.description).toBe(description);
     expect(created.cityId).toBe('rotterdam');
-    expect(created.placeIds).toEqual(replacementDraft!.placeIds);
-    expect(created.placeIds.every((id) => rotterdamPlaces.some((place) => place.id === id))).toBe(true);
-    await expect(page).toHaveURL(`/plans/${created.id}`);
+    await expect(page.locator('#saved-plan-description')).toHaveValue(description);
+    await page.reload();
+    await expect(page.locator('#saved-plan-description')).toHaveValue(description);
+    const edited = 'Museums first.\nLunch by the water.';
+    await page.locator('#saved-plan-description').fill(edited);
+    await page.locator('.plan-details-heading .plan-back-link').click();
+    const discard = page.locator('#discard-plan-edits');
+    await expect(discard).toBeVisible();
+    await discard.getByRole('button', { name: 'Keep editing', exact: true }).click();
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await page.reload();
+    await expect(page.locator('#saved-plan-description')).toHaveValue(edited);
+    for (const viewport of [{ width: 1440, height: 720 }, { width: 390, height: 844 }]) {
+      await page.setViewportSize(viewport);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
+      await page.screenshot({ path: testInfo.outputPath(`description-details-${viewport.width}.png`) });
+    }
+    const oversized = await page.request.put(`/api/plans/${created.id}`, { data: { name, cityId: 'rotterdam', placeIds: [], description: 'x'.repeat(501) } });
+    expect(oversized.status()).toBe(400);
+    expect((await oversized.json()).detail).toContain('500');
+    await page.reload();
+    await expect(page.locator('#saved-plan-description')).toHaveValue(edited);
+    await page.locator('#saved-plan-description').fill('');
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await page.reload();
+    await expect(page.locator('#saved-plan-description')).toHaveValue('');
+    await deletePlanThroughUi(page);
+  } catch (error) { testFailed = true; throw error; }
+  finally { await cleanupCreatedPlans(page, ids, testFailed); }
+});
+
+test('saves an empty plan, adds a place later and can return to an empty saved plan', async ({ page }) => {
+  const createdIds: string[] = [];
+  let testFailed = false;
+  try {
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto('/plans/new?city=amsterdam');
+    await page.locator('#plan-city').selectOption('rotterdam');
+    const name = `Places later ${randomUUID().slice(0, 8)}`;
+    await page.locator('#plan-name').fill(name);
+    const post = page.waitForResponse(response => response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans');
+    await page.getByRole('button', { name: 'Save plan', exact: true }).click();
+    const response = await post;
+    expect(response.status()).toBe(201);
+    const saved = await response.json() as { id: string; cityId: string; placeIds: string[] };
+    createdIds.push(saved.id);
+    expect(saved.placeIds).toEqual([]);
+    expect(saved.cityId).toBe('rotterdam');
+    await expect(page.locator('.details-empty')).toContainText('Your plan is saved');
+    await page.reload();
+    await expect(page.locator('.details-empty')).toContainText('Your plan is saved');
+    await expect(page.locator('#add-saved-stop option')).not.toHaveCount(1);
+    await page.locator('#add-saved-stop').selectOption({ index: 1 });
+    await page.getByRole('button', { name: 'Add place', exact: true }).click();
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.locator('.details-stop')).toHaveCount(1);
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await page.locator('.details-remove-button').click();
+    await expect(page.locator('.details-empty')).toContainText('Save changes to update this plan');
+    await page.getByRole('button', { name: 'Save changes', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Save changes', exact: true })).toBeDisabled();
+    await page.reload();
+    await expect(page.locator('.details-empty')).toContainText('Your plan is saved');
+    await expect(page.locator('#saved-plan-name')).toHaveValue(name);
     await deletePlanThroughUi(page);
   } catch (error) {
     testFailed = true;
     throw error;
   } finally {
-    await cleanupCreatedPlans(page, testPlanIds, testFailed);
+    await cleanupCreatedPlans(page, createdIds, testFailed);
   }
+});
+
+test('blocks a thirteenth draft place with feedback and returns an API validation error', async ({ page }) => {
+  const allPlaces = await getActualPlaces(page, 'amsterdam');
+  const counts = new Map<string, number>();
+  for (const place of allPlaces) counts.set(place.name, (counts.get(place.name) ?? 0) + 1);
+  const places = allPlaces.filter(place => counts.get(place.name) === 1).slice(0, 13);
+  expect(places).toHaveLength(13);
+  await page.goto('/plans');
+  const ids = places.slice(0, 12).map(place => place.id);
+  await seedTabDraft(page, { cityId: 'amsterdam', name: 'A full day', placeIds: ids, updatedAt: '2026-11-10T12:00:00.000Z' });
+  await page.goto('/');
+  await page.locator('#place-search').fill(places[12].name);
+  const card = page.locator('.place-card').filter({ has: page.getByText(places[12].name, { exact: true }) })
+    .filter({ has: page.locator('.place-card__city').getByText('Amsterdam', { exact: true }) });
+  await card.click();
+  await expect(page.locator('.place-detail__limit')).toContainText('12-place limit reached');
+  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan', exact: true }).click();
+  await expect(page.locator('.draft-feedback')).toContainText('12-place limit');
+  expect(await page.evaluate(() => JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? '{}').placeIds)).toEqual(ids);
+  const response = await page.request.post('/api/plans', { data: { name: 'Too many places', cityId: 'amsterdam', placeIds: places.map(place => place.id) } });
+  expect(response.status()).toBe(400);
+  expect(response.headers()['content-type']).toContain('application/problem+json');
+  expect((await response.json()).detail).toContain('12');
 });
 
 test('keeps all 13 real draft places through refresh and saves after one explicit removal', async ({ page }) => {
@@ -1151,7 +1803,7 @@ test('keeps all 13 real draft places through refresh and saves after one explici
   expect(thirteenPlaces).toHaveLength(13);
   const placeIds = thirteenPlaces.map((place) => place.id);
   await page.goto('/plans');
-  const draftName = `Thirteen real stops ${randomUUID()}`;
+  const draftName = `Thirteen real stops ${randomUUID().slice(0, 8)}`;
   await seedTabDraft(page, {
     cityId: 'amsterdam',
     name: draftName,
@@ -1198,7 +1850,7 @@ test('keeps all 13 real draft places through refresh and saves after one explici
   const testPlanIds: string[] = [];
   let testFailed = false;
   try {
-    const savedName = `Twelve verified stops ${randomUUID()}`;
+    const savedName = `Twelve verified stops ${randomUUID().slice(0, 8)}`;
     await page.locator('#plan-name').fill(savedName);
     const postResponsePromise = page.waitForResponse((response) =>
       response.request().method() === 'POST' && new URL(response.url()).pathname === '/api/plans',
@@ -1359,7 +2011,7 @@ test('keeps one delayed plan POST safe from every SPA exit path until confirmati
   await expect(firstRow.locator('.editor-icon-button').nth(1)).toBeDisabled();
   await expect(firstRow.locator('.editor-remove')).toBeDisabled();
 
-  await page.locator('.editor-back').click();
+  await page.locator('.plan-editor-heading .plan-back-link').click();
   await expect(page).toHaveURL(/\/plans\/new/);
   await page.locator('.plans-brand').click();
   await expect(page).toHaveURL(/\/plans\/new/);
@@ -1389,7 +2041,7 @@ test('keeps one delayed plan POST safe from every SPA exit path until confirmati
 test('keeps saved plans usable at mobile widths with keyboard and browser history', async ({ page }) => {
   test.setTimeout(60_000);
   const [place] = await getActualPlaces(page, 'amsterdam');
-  const mobilePlanName = `Mobile quality check ${randomUUID()}`;
+  const mobilePlanName = `Mobile quality check ${randomUUID().slice(0, 8)}`;
   const testPlanIds: string[] = [];
   let testFailed = false;
   try {
@@ -1490,6 +2142,10 @@ test('keeps saved plans usable at mobile widths with keyboard and browser histor
     }
 
     await page.locator('#saved-plan-name').focus();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#saved-plan-description')).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(page.locator('#add-saved-stop')).toBeFocused();
     await page.keyboard.press('Tab');
     const focusedRemove = page.locator('.details-remove-button');
     await expect(focusedRemove).toBeFocused();
@@ -1640,7 +2296,7 @@ test('captures the Saved Plans screens at every required viewport', async ({ pag
       await page.screenshot({
         path: join(screenshotsDirectory, `edit-save-controls-${viewport.width}x${viewport.height}.png`),
       });
-      await page.locator('.details-topbar-link').click();
+      await page.locator('.plan-details-heading .plan-back-link').click();
       const discardDialog = page.locator('#discard-plan-edits');
       await expect(discardDialog).toBeVisible();
       await expect(discardDialog.getByRole('button', { name: 'Keep editing', exact: true })).toBeInViewport();
@@ -1673,6 +2329,7 @@ test('captures the Saved Plans screens at every required viewport', async ({ pag
 });
 
 test('keeps search and tab draft usable when the OpenFreeMap style is unavailable', async ({ page }) => {
+  await page.route('**/api/plans/*/autosave', route => route.abort('connectionfailed'));
   test.setTimeout(20_000);
   await page.unroute('**/styles/liberty');
   await page.route(openFreeMapStyleUrl, (route) =>
@@ -1686,19 +2343,19 @@ test('keeps search and tab draft usable when the OpenFreeMap style is unavailabl
   for (const width of [360, 390, 1440]) {
     await page.setViewportSize({ width, height: width === 360 ? 800 : width === 390 ? 844 : 900 });
     await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible();
-    await expect(page.locator('.map-caption')).toContainText('Map style © OpenFreeMap');
-    await expect(page.locator('.map-caption')).toContainText('Map data © OpenStreetMap contributors');
+    await expect(page.locator('.map-viewport__attribution')).toContainText('OpenFreeMap');
+    await expect(page.locator('.map-viewport__attribution')).toContainText('OpenStreetMap contributors');
 
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(documentWidth).toBeLessThanOrEqual(width);
     const fallbackBounds = await page.locator('.map-viewport__fallback').boundingBox();
-    const caption = page.locator('.map-caption');
-    await caption.scrollIntoViewIfNeeded();
-    const captionBounds = await caption.boundingBox();
+    const attribution = page.locator('.map-viewport__attribution');
+    await attribution.scrollIntoViewIfNeeded();
+    const attributionBounds = await attribution.boundingBox();
     expect(fallbackBounds).not.toBeNull();
-    expect(captionBounds).not.toBeNull();
-    expect(captionBounds!.x).toBeGreaterThanOrEqual(0);
-    expect(captionBounds!.x + captionBounds!.width).toBeLessThanOrEqual(width);
+    expect(attributionBounds).not.toBeNull();
+    expect(attributionBounds!.x).toBeGreaterThanOrEqual(0);
+    expect(attributionBounds!.x + attributionBounds!.width).toBeLessThanOrEqual(width);
 
     if (width <= 390) {
       const card = page.locator('.place-card').first();
@@ -1730,10 +2387,11 @@ test('keeps search and tab draft usable when the OpenFreeMap style is unavailabl
     };
   });
   expect(draftLayout.draftBottom).toBeLessThanOrEqual(draftLayout.placeListTop);
-  await expect(page.getByRole('link', { name: 'Review and save draft' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Review current plan' })).toBeVisible();
 });
 
 test('Map navigation focuses the shared map and keeps the tab draft when tiles are unavailable', async ({ page }) => {
+  await page.route('**/api/plans/*/autosave', route => route.abort('connectionfailed'));
   test.setTimeout(30_000);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.unroute(openFreeMapStyleUrl);
@@ -1779,6 +2437,7 @@ test('Map navigation focuses the shared map and keeps the tab draft when tiles a
 });
 
 test('keeps catalog selection usable after map tiles fail following style load', async ({ page }) => {
+  await page.route('**/api/plans/*/autosave', route => route.abort('connectionfailed'));
   test.setTimeout(30_000);
   let failTiles = false;
   let failedTileRequests = 0;
@@ -1839,7 +2498,7 @@ test('checks responsive geometry and captures the actual shared-city interface',
     await expect(page.getByRole('combobox')).toHaveCount(0);
     await expect(page.locator('.filter-row')).toBeVisible();
     await expect(page.locator('.place-results__heading h2')).toHaveText('Places to explore');
-    await expect(page.locator('.map-caption')).toContainText('Map style');
+    await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenFreeMap');
     if (viewport.width <= 390) {
       for (const selector of ['.search-box', '.filter-chip', '.discover-theme', '.bottom-nav__item']) {
         const bounds = await page.locator(selector).first().boundingBox();
@@ -1858,12 +2517,12 @@ test('checks responsive geometry and captures the actual shared-city interface',
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(documentWidth).toBeLessThanOrEqual(viewport.width);
 
-    const caption = page.locator('.map-caption');
-    await caption.scrollIntoViewIfNeeded();
-    const captionBox = await caption.boundingBox();
+    const attribution = page.locator('.maplibregl-ctrl-attrib');
+    await attribution.scrollIntoViewIfNeeded();
+    const attributionBox = await attribution.boundingBox();
     const navigationBox = await page.locator('.bottom-nav').boundingBox();
-    if (captionBox !== null && navigationBox !== null) {
-      expect(captionBox.y + captionBox.height).toBeLessThanOrEqual(navigationBox.y);
+    if (attributionBox !== null && navigationBox !== null) {
+      expect(attributionBox.y + attributionBox.height).toBeLessThanOrEqual(navigationBox.y);
     }
 
     const viewportLabel = `${viewport.width}x${viewport.height}`;
@@ -1989,6 +2648,7 @@ async function assertRealViewportGeometry(
 type TabDraftSeed = Readonly<{
   cityId: string;
   name: string;
+  description?: string;
   placeIds: readonly string[];
   updatedAt: string;
 }>;
@@ -2058,8 +2718,7 @@ async function addExplorePlaceFromCard(page: Page, index: number): Promise<strin
   const placeName = await card.locator('.place-card__name').innerText();
   await card.scrollIntoViewIfNeeded();
   await card.click();
-  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
-  await expect(page.locator('.draft-feedback')).toContainText(/Added 1 place to the tab draft/);
+  await confirmMapAddition(page);
   return placeName;
 }
 
@@ -2075,9 +2734,27 @@ async function openExplorePlaceByName(page: Page, placeName: string) {
 
 async function addExplorePlaceByName(page: Page, placeName: string): Promise<string> {
   await openExplorePlaceByName(page, placeName);
-  await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
-  await expect(page.locator('.draft-feedback')).toContainText(/Added 1 place to the tab draft/);
+  await confirmMapAddition(page);
   return placeName;
+}
+
+async function confirmMapAddition(page: Page) {
+  const saved = page.waitForResponse(response => response.request().method() === 'PUT'
+    && new URL(response.url()).pathname.startsWith('/api/plans/'));
+  await page.locator('.place-detail').getByRole('button', { name: /^Add to (saved )?plan$/ }).click();
+  const response = await saved;
+  expect(response.status()).toBe(200);
+  const plan = await response.json() as { id: string; name: string; placeIds: string[] };
+  await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', `/plans/${plan.id}`);
+  await expect(page.locator('.draft-count')).toHaveText(`${plan.placeIds.length} / 12`);
+  return plan;
+}
+
+function trackAutosavedPlans(page: Page, ids: string[]) {
+  page.on('response', response => {
+    const match = /^\/api\/plans\/([\da-f-]{36})\/autosave$/i.exec(new URL(response.url()).pathname);
+    if (response.request().method() === 'PUT' && response.status() === 200 && match) ids.push(match[1]);
+  });
 }
 
 function isPlansListRead(response: Response): boolean {

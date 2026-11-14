@@ -42,6 +42,11 @@ public class PlanController {
         return ResponseEntity.created(URI.create("/api/plans/" + response.id())).body(response);
     }
 
+    @PutMapping("/{id}/autosave")
+    public PlanResponse autosave(@PathVariable UUID id, @Valid @RequestBody PlanUpsertRequest request) {
+        return planService.autosave(id, request);
+    }
+
     @PutMapping("/{id}")
     public PlanResponse update(@PathVariable UUID id, @Valid @RequestBody PlanUpsertRequest request) {
         return planService.update(id, request);

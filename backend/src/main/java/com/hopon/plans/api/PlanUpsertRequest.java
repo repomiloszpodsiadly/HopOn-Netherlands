@@ -6,6 +6,7 @@ import java.util.List;
 
 public record PlanUpsertRequest(
         @NotNull String name,
+        String description,
         @NotNull String cityId,
         @NotNull List<@NotNull String> placeIds) {
 }

@@ -1,6 +1,6 @@
 # HopOn Netherlands
 
-HopOn is an Angular 22 and Spring Boot 4 local-first guide to Amsterdam, Rotterdam and Utrecht. Explore loads all three cities together in one shared catalog and map; search and category filters apply across the catalog, and every place card identifies its city. Discover by Vibe is deterministic, not AI, and remains available in supported narrower layouts (up to 1100px). Saved day plans are single-city. The app does not provide transit routing, user accounts or a hosted production service.
+HopOn is an Angular 22 and Spring Boot 4 local-first guide to Amsterdam, Rotterdam and Utrecht. Explore loads all three cities together in one shared catalog and map; search and category filters apply across the catalog, and every place card identifies its city. Discover by Vibe is deterministic, not AI, and remains available in supported narrower layouts (up to 1100px). Day plans can combine places from all three cities. The app does not provide transit routing, user accounts or a hosted production service.
 
 ## Requirements
 
@@ -33,7 +33,9 @@ For a phone on the same trusted Wi-Fi, run `npm.cmd run start:lan` in `frontend/
 
 ## Data and maps
 
-The city catalog is a static OpenStreetMap snapshot, not a live transit feed. Amsterdam, Rotterdam and Utrecht appear together in Explore; search and category filters share that catalog, while each saved plan belongs to one city. A new plan is a temporary draft in that tab's `sessionStorage`. Saved plans live in in-memory H2: they survive browser refresh while Spring is running and reset when the backend process stops.
+The city catalog is a static OpenStreetMap snapshot, not a live transit feed. Amsterdam, Rotterdam and Utrecht appear together in Explore, and plans may include places from all three cities. A plan's selected city is its starting/reference city. Adding the first place from Explore or Discover automatically saves the tab draft; later additions update the same current plan. **Use this plan** selects a saved plan for map additions, and **Review current plan** opens it. Unsaved draft content and the current plan ID use tab `sessionStorage`. Saved plans live in in-memory H2: they survive browser refresh while Spring is running and reset when the backend process stops.
+
+There may be at most **6 saved plans**, each with **0–12 places**. Plan names allow **30 characters** and descriptions **500**. Creation allocates a numbered name when necessary (`My day out`, `My day out-1`, …). At capacity, existing plans remain editable; creating another returns an explanation to use or delete an existing plan. Autosave retries reuse the same UUID, and a failed save keeps the draft in its tab with a retry action. Saved-plan name, description, removal and ordering edits use **Save changes**.
 
 The MapLibre map loads the public [OpenFreeMap](https://openfreemap.org/) Liberty style and needs an internet connection. It shows the three-city overview; pan and zoom to explore each area. An isolated tile, glyph or sprite failure can leave a partially rendered map without a Retry control. A startup timeout or WebGL loss can show the explicit map fallback and Retry action. Search, place cards and plan workflows remain usable when map resources fail; this is not an offline-map guarantee. MapLibre keeps map attribution visible. See [OpenStreetMap copyright and licensing](https://www.openstreetmap.org/copyright) and [the photo attribution manifest](frontend/public/assets/catalog/assets-attribution.json) for the featured photos' sources, authors, licenses and change notes.
 
@@ -73,7 +75,7 @@ Remove-Item Env:\HOPON_LIVE_MAP_SMOKE
 
 That smoke checks the style response and map readiness, not rendered tiles.
 
-The [manual phone checklist](docs/HOP-006-manual-qa-checklist.md), [recruitment demo outline](docs/HOP-006-recruitment-demo.md), and [release evidence](docs/HOP-006-release-verification.md) keep automated and user-run checks separate.
+The [manual phone checklist](docs/HOP-006-manual-qa-checklist.md), [recruitment demo outline](docs/HOP-006-recruitment-demo.md), and [release evidence](docs/HOP-006-release-verification.md) keep automated and user-run checks separate. The [HOP-007 design and validation notes](docs/HOP-007-design-notes.md) describe the current planner behavior and responsive UI checks.
 
 ## Troubleshooting
 

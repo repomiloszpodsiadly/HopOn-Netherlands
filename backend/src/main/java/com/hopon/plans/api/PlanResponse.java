@@ -7,6 +7,7 @@ import java.util.UUID;
 public record PlanResponse(
         UUID id,
         String name,
+        String description,
         String cityId,
         List<String> placeIds,
         Instant createdAt,

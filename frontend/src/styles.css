@@ -1,17 +1,21 @@
 @import 'tailwindcss';
 @import 'maplibre-gl/dist/maplibre-gl.css';
+@import './app/features/shared/pointer-light.css';
 
 :root {
-  --color-canvas: #f8f7f3;
-  --color-surface: #fff;
-  --color-ink: #1f2b2b;
-  --color-muted: #667173;
-  --color-primary: #df6b49;
-  --color-primary-hover: #c9583c;
-  --color-secondary: #287671;
+  --color-canvas: #fbf5ea;
+  --color-surface: #fffaf3;
+  --color-ink: #073d32;
+  --color-muted: #5a6d62;
+  --color-primary: #ac552c;
+  --color-primary-hover: #874020;
+  --color-secondary: #295e47;
+  --color-action: #565943;
+  --color-action-hover: #62604c;
+  --color-action-ink: #fffaf3;
   --color-danger: #a33e32;
-  --color-border: #e8e7e1;
-  --color-border-strong: #d5d9d2;
+  --color-border: #e5d8c5;
+  --color-border-strong: #d7d9c2;
   --color-focus: #215f5c;
 
   --space-1: 4px;
@@ -30,8 +34,8 @@
   --radius-card: 24px;
   --radius-control: 15px;
   --radius-pill: 999px;
-  --shadow-card: 0 16px 42px rgb(23 37 40 / 6%);
-  --shadow-control: 0 5px 18px rgb(23 37 40 / 5%);
+  --shadow-card: 0 8px 26px rgb(110 76 39 / 9%);
+  --shadow-control: 0 3px 10px rgb(110 76 39 / 9%);
   --focus-ring: 3px solid var(--color-focus);
   --focus-offset: 3px;
   --motion-fast: 160ms ease-out;
@@ -48,9 +52,7 @@ html {
 
 body {
   margin: 0;
-  background:
-    radial-gradient(ellipse at 88% 0%, rgb(229 237 228 / 55%), transparent 34rem),
-    var(--color-canvas);
+  background: linear-gradient(135deg, #f4dac4, #fcf2e4 55%, #edd4be);
   color: var(--color-ink);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.5;
@@ -66,6 +68,18 @@ body {
   margin-inline: auto;
 }
 
+.hopon-brand { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; color: var(--color-ink); text-decoration: none; }
+.hopon-brand img { display: block; flex: 0 0 auto; }
+.hopon-brand > span { font-size: 23px; font-weight: 780; letter-spacing: -1px; line-height: 1; }
+.hopon-brand small { display: block; margin-top: 3px; font-size: 10px; font-weight: 600; letter-spacing: .7px; }
+
+@media (min-width: 901px) {
+  body { background: linear-gradient(rgb(255 245 229 / 4%), rgb(255 245 229 / 4%)), url('/assets/brand/netherlands-panorama-v2.jpg') left center / cover fixed; }
+  .maplibregl-map .maplibregl-ctrl-bottom-right { right: 10px; bottom: 8px; max-width: calc(100% - 20px); }
+}
+
+:where(.plans-shell, .plan-editor-shell, .plan-details-shell) { background: rgb(255 249 239 / 96%); }
+
 @keyframes map-spin { to { transform: rotate(360deg); } }
 
 button,
@@ -76,6 +90,7 @@ textarea {
 }
 
 button:focus-visible,
+summary:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible,
@@ -86,6 +101,7 @@ textarea:focus-visible,
 }
 
 @media (max-width: 900px) {
+  body { background: linear-gradient(rgb(255 246 231 / 40%), rgb(255 246 231 / 70%)), url('/assets/brand/netherlands-panorama-v2.jpg') center top / auto 100dvh fixed; }
   .maplibregl-map .maplibregl-ctrl-bottom-right {
     top: 8px;
     right: auto;
@@ -94,12 +110,13 @@ textarea:focus-visible,
   }
 
   .maplibregl-map .maplibregl-ctrl-attrib {
-    max-width: min(78vw, 320px);
+    max-width: min(calc(100vw - 132px), 320px);
     background: rgb(255 255 255 / 94%);
   }
 }
 
 @media (max-width: 760px) {
+  html { scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom)); }
   .maplibregl-map .maplibregl-ctrl-group button {
     width: var(--target-min);
     height: var(--target-min);

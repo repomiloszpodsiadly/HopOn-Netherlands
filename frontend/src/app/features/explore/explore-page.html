@@ -31,15 +31,10 @@
           placeholder="Search places"
           [value]="searchQuery()"
           (input)="onSearchInput($event)"
-          aria-describedby="search-note"
+          aria-label="Search places"
         />
       </label>
-      <p class="control-note" id="search-note">Search across Amsterdam, Rotterdam and Utrecht.</p>
 
-      <div class="city-scope" aria-label="Cities included in the guide">
-        <span class="city-scope__count">3 cities</span>
-        <span class="city-scope__names">Amsterdam <i></i> Rotterdam <i></i> Utrecht</span>
-      </div>
 
     </section>
 
@@ -63,81 +58,6 @@
         }
       </div>
     </section>
-
-    <section class="discover-panel" aria-labelledby="discover-title">
-      <div class="section-heading">
-        <h2 id="discover-title">Discover by vibe</h2>
-        <span>THREE CITY CATALOG</span>
-      </div>
-      <div class="discover-themes" role="group" aria-label="Choose a discovery theme">
-        @for (theme of discoverThemes; track theme.value) {
-          <button
-            type="button"
-            class="discover-theme"
-            [class.discover-theme--selected]="activeDiscoverTheme() === theme.value"
-            [attr.aria-pressed]="activeDiscoverTheme() === theme.value"
-            [disabled]="placesLoading() || placesError() !== null"
-            (click)="chooseDiscoverTheme(theme.value)"
-          >
-            {{ theme.label }}
-          </button>
-        }
-      </div>
-
-      @if (activeDiscoverTheme(); as theme) {
-        <div class="discover-results" [attr.aria-busy]="discoverState() === 'loading'">
-          @if (discoverState() === 'loading') {
-            <p class="discover-message" role="status">Finding {{ theme }} picks across all three cities. Results appear as each city is ready&#8230;</p>
-          }
-          @if (discoverState() === 'error') {
-            <div class="discover-error" role="alert">
-              <p>{{ discoverError() }}</p>
-              <button class="text-button" type="button" (click)="retryDiscover()">Retry</button>
-            </div>
-          } @else if (discoverWarning(); as warning) {
-            <div class="discover-warning" role="status">
-              <p>{{ warning }}</p>
-              <button class="text-button" type="button" (click)="retryDiscover()">Retry all cities</button>
-            </div>
-          }
-          @for (group of discoverGroups(); track group.cityId) {
-            <section class="discover-city-group" [attr.aria-label]="'Discover picks in ' + cityName(group.cityId)">
-              <div class="discover-city-group__heading">
-                <h3>{{ cityName(group.cityId) }}</h3>
-                @if (group.status === 'success' || group.status === 'empty') {
-                  <span>{{ group.placeIds.length }} picks</span>
-                }
-              </div>
-              @if (group.status === 'loading') {
-                <p class="discover-message" role="status">Finding verified picks in {{ cityName(group.cityId) }}&#8230;</p>
-              } @else if (group.status === 'error') {
-                <p class="discover-message" role="status">{{ group.error }}</p>
-              } @else if (group.status === 'empty') {
-                <p class="discover-message">No verified places matched this theme here.</p>
-              } @else {
-                <p class="discover-description">{{ group.description }}</p>
-                <ul class="discover-picks">
-                  @for (placeId of group.placeIds; track placeId) {
-                    @if (discoverPlacesById(placeId); as place) {
-                      <li>
-                        <button type="button" class="discover-pick" (click)="selectDiscoverPlace(place.id, $event.currentTarget)">
-                          <span class="discover-pick__name">{{ place.name }}</span>
-                          <span class="discover-pick__category">{{ categoryLabels[place.category] }}</span>
-                        </button>
-                      </li>
-                    }
-                  }
-                </ul>
-                <button class="button button--secondary discover-add" type="button" (click)="addDiscoverSelection(group.cityId)">
-                  Add {{ cityName(group.cityId) }} picks to plan
-                </button>
-              }
-            </section>
-          }
-        </div>
-      }
-    </section>
-
 
     <section class="place-results" aria-labelledby="places-title" tabindex="-1">
       <div class="place-results__heading">
@@ -202,7 +122,6 @@
           [cities]="cities()"
           [places]="filteredPlaces()"
           [selectedPlaceId]="selectedPlaceId()"
-          [discoverPlaceIds]="discoverPlaceIds()"
           (placeSelected)="selectPlace($event)"
         />
       } @else {
@@ -337,10 +256,6 @@
 
   </main>
 
-  <footer class="footer-note">
-    <span>HopOn Netherlands</span>
-    <span>Browse independently; map availability depends on your connection.</span>
-  </footer>
 
   <app-main-navigation />
 </div>

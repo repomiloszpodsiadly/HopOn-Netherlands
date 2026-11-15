@@ -178,10 +178,17 @@ export async function addExplorePlaceFromCard(page: Page, index: number): Promis
   await card.scrollIntoViewIfNeeded();
   await card.click();
   await confirmMapAddition(page);
+  await page.getByRole('button', { name: 'Close place details', exact: true }).click();
+  await expect(page.locator('.place-detail')).toHaveCount(0);
   return placeName;
 }
 
 export async function openExplorePlaceByName(page: Page, placeName: string) {
+  const closeDetails = page.getByRole('button', { name: 'Close place details', exact: true });
+  if (await closeDetails.isVisible()) {
+    await closeDetails.click();
+    await expect(page.locator('.place-detail')).toHaveCount(0);
+  }
   await page.locator('#place-search').fill(placeName);
   const card = page.locator('.place-card').filter({ hasText: placeName });
   await expect(card).toHaveCount(1);
@@ -194,6 +201,8 @@ export async function openExplorePlaceByName(page: Page, placeName: string) {
 export async function addExplorePlaceByName(page: Page, placeName: string): Promise<string> {
   await openExplorePlaceByName(page, placeName);
   await confirmMapAddition(page);
+  await page.getByRole('button', { name: 'Close place details', exact: true }).click();
+  await expect(page.locator('.place-detail')).toHaveCount(0);
   return placeName;
 }
 

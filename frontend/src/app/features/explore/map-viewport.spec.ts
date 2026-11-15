@@ -329,15 +329,9 @@ describe('MapViewportComponent', () => {
     expect(source.setData).toHaveBeenCalledTimes(1);
     expect((source.data as { features: { id: string }[] }).features[0].id).toBe('place-2');
 
-    fixture.componentRef.setInput('discoverPlaceIds', ['place-2']);
-    fixture.detectChanges();
-    expect(source.setData).toHaveBeenCalledTimes(2);
-    expect((source.data as { features: { properties: { discover: boolean } }[] }).features[0].properties.discover)
-      .toBe(true);
-
     fixture.componentRef.setInput('selectedPlaceId', 'place-2');
     fixture.detectChanges();
-    expect(source.setData).toHaveBeenCalledTimes(3);
+    expect(source.setData).toHaveBeenCalledTimes(2);
     const selectedFeature = (source.data as { features: { properties: { selected: boolean } }[] })
       .features[0];
     expect(selectedFeature.properties.selected).toBe(true);

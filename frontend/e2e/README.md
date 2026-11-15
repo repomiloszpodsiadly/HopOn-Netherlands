@@ -22,9 +22,9 @@ and in-memory H2. Tests run with one worker and clean up only their own plans.
 Use a development session with free plan slots for capacity scenarios. Do not
 restart an API holding plans you need to keep; stopping it clears H2.
 
-Explore loads Amsterdam, Rotterdam and Utrecht together. Discover is hidden
-at desktop widths (1440px); its scenarios use the supported tablet and mobile
-layouts.
+Explore loads Amsterdam, Rotterdam and Utrecht together. Responsive scenarios
+cover the catalog, map and plan controls across desktop, tablet and mobile
+layouts, including the absence of the removed Discover by vibe section.
 
 Map tests intercept the OpenFreeMap style URL with deterministic local fixtures.
 They cover readiness, reconnect, HTTP 503, aborted style requests and controlled

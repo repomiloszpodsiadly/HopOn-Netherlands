@@ -18,7 +18,6 @@ export type PlaceResultsView = Readonly<{
   activeFilters: boolean;
   places: readonly PlaceDto[];
   selectedPlaceId: string | null;
-  discoverPlaceIds: readonly string[];
   categoryLabels: Readonly<Record<PlaceCategory, string>>;
   hasMore: boolean;
   remainingCount: number;
@@ -71,7 +70,4 @@ export class PlaceResultsListComponent {
     this.failedFeaturedImages.update((failed) => new Set([...failed, placeId]));
   }
 
-  displayTag(tag: string): string {
-    return tag.replaceAll('_', ' ');
-  }
 }

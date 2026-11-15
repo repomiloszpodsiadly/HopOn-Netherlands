@@ -20,7 +20,6 @@ import {
   finalize,
   map,
   merge,
-  type Observable,
   of,
   startWith,
   Subject,
@@ -29,7 +28,6 @@ import {
 } from 'rxjs';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { CitiesApiService } from '../../core/api/cities-api.service';
-import { DiscoverApiService } from '../../core/api/discover-api.service';
 import { HealthApiService, UnexpectedHealthResponseError } from '../../core/api/health-api.service';
 import { PlacesApiService } from '../../core/api/places-api.service';
 import { PlansApiService, UnexpectedPlanResponseError } from '../../core/api/plans-api.service';
@@ -42,7 +40,6 @@ import {
   CityId,
   CITY_IDS,
   CITY_LABELS,
-  DiscoverTheme,
   MobilityHubDto,
   PlaceCategory,
   PlaceDto,
@@ -58,12 +55,7 @@ import { getFeaturedPlaceImage } from './place-image-attribution';
 import { PlaceResultsListComponent, type PlaceResultsView } from './place-results-list';
 import {
   CityResourceState,
-  DiscoverCityGroup,
-  DiscoverCityOutcome,
-  DiscoverRequest,
-  createDiscoverCityGroup,
   initialCityResourceStates,
-  summarizeDiscoverGroups,
 } from './explore-data';
 
 type ApiState = 'checking' | 'online' | 'offline' | 'unexpected';
@@ -116,17 +108,13 @@ export class ExplorePage {
   private readonly citiesApi = inject(CitiesApiService);
   private readonly placesApi = inject(PlacesApiService);
   private readonly stopsApi = inject(StopsApiService);
-  private readonly discoverApi = inject(DiscoverApiService);
   private readonly plansApi = inject(PlansApiService);
   private readonly injector = inject(Injector);
   private readonly destroyRef = inject(DestroyRef);
   private readonly retryCities$ = new Subject<void>();
   private readonly retryPlaces$ = new Subject<void>();
   private readonly retryHubs$ = new Subject<void>();
-  private readonly discoverRequest$ = new Subject<DiscoverRequest | null>();
   private healthCheckPending = false;
-  private discoverRequestId = 0;
-  private readonly pendingDiscoverOutcomes = new Map<CityId, DiscoverCityOutcome>();
   private detailFocusReturn: HTMLElement | null = null;
 
   readonly cityIds = CITY_IDS;
@@ -145,11 +133,6 @@ export class ExplorePage {
     PARKS_NATURE: 'Parks & nature',
     LANDMARKS: 'Landmarks',
   };
-  readonly discoverThemes: readonly Readonly<{ value: DiscoverTheme; label: string }>[] = [
-    { value: 'architecture', label: 'Architecture Hunt' },
-    { value: 'culture', label: 'Culture Day' },
-    { value: 'green', label: 'Green Escape' },
-  ];
 
   readonly apiState = signal<ApiState>('checking');
   readonly apiStatusText = signal('Checking local API');
@@ -208,12 +191,6 @@ export class ExplorePage {
   readonly activeCategory = signal<PlaceCategory | null>(null);
   readonly selectedPlaceId = signal<string | null>(null);
   readonly visiblePlaceLimit = signal(INITIAL_PLACE_LIMIT);
-  readonly activeDiscoverTheme = signal<DiscoverTheme | null>(null);
-  readonly discoverState = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
-  readonly discoverGroups = signal<readonly DiscoverCityGroup[]>([]);
-  readonly discoverWarning = signal<string | null>(null);
-  readonly discoverError = signal<string | null>(null);
-  readonly discoverPlaceIds = signal<readonly string[]>([]);
   readonly draftFeedback = signal('');
   readonly savedPlanContextId = signal<string | null>(null);
   readonly savedPlanContext = signal<PlanResponse | null>(null);
@@ -293,7 +270,6 @@ export class ExplorePage {
     activeFilters: this.hasActiveFilters(),
     places: this.visiblePlaces(),
     selectedPlaceId: this.selectedPlaceId(),
-    discoverPlaceIds: this.discoverPlaceIds(),
     categoryLabels: this.categoryLabels,
     hasMore: this.hasMorePlaces(),
     remainingCount: this.resultCount() - this.visiblePlaceLimit(),
@@ -304,7 +280,6 @@ export class ExplorePage {
     this.watchSavedPlanContext();
     this.checkHealth();
     this.loadCities();
-    this.watchDiscoverRequests();
     this.loadPlacesForAllCities();
     this.loadHubsForAllCities();
   }
@@ -430,13 +405,6 @@ export class ExplorePage {
     this.focusAfterRender(() => this.placeDetail?.focusHeading());
   }
 
-  selectDiscoverPlace(placeId: string, trigger?: EventTarget | null): void {
-    this.searchQuery.set('');
-    this.activeCategory.set(null);
-    this.visiblePlaceLimit.set(INITIAL_PLACE_LIMIT);
-    this.selectPlace(placeId, trigger);
-  }
-
   closePlaceDetails(): void {
     if (this.selectedPlaceId() === null) {
       return;
@@ -481,44 +449,6 @@ export class ExplorePage {
         && (this.savedPlanContextLoading() || this.savedPlanContext() === null));
   }
 
-  chooseDiscoverTheme(theme: DiscoverTheme): void {
-    if (this.activeDiscoverTheme() === theme) {
-      this.activeDiscoverTheme.set(null);
-      this.discoverRequest$.next(null);
-      return;
-    }
-
-    this.searchQuery.set('');
-    this.activeCategory.set(null);
-    this.visiblePlaceLimit.set(INITIAL_PLACE_LIMIT);
-    this.activeDiscoverTheme.set(theme);
-    this.requestDiscoverTheme(theme);
-  }
-
-  retryDiscover(): void {
-    const theme = this.activeDiscoverTheme();
-    if (theme !== null) {
-      this.requestDiscoverTheme(theme);
-    }
-  }
-
-  private requestDiscoverTheme(theme: DiscoverTheme): void {
-    const request = { theme, requestId: ++this.discoverRequestId } satisfies DiscoverRequest;
-    this.pendingDiscoverOutcomes.clear();
-    this.discoverState.set('loading');
-    this.discoverGroups.set(CITY_IDS.map((cityId) => ({
-      cityId,
-      status: 'loading',
-      description: null,
-      placeIds: [],
-      error: null,
-    })));
-    this.discoverWarning.set(null);
-    this.discoverError.set(null);
-    this.discoverPlaceIds.set([]);
-    this.discoverRequest$.next(request);
-  }
-
   addPlaceToPlan(placeId: string): void {
     this.requestDraftAdd([placeId]);
   }
@@ -529,15 +459,6 @@ export class ExplorePage {
 
   cityName(cityId: CityId): string {
     return this.cities().find((city) => city.id === cityId)?.name ?? CITY_LABELS[cityId];
-  }
-
-  discoverPlacesById(placeId: string): PlaceDto | null {
-    return this.places().find((place) => place.id === placeId) ?? null;
-  }
-
-  addDiscoverSelection(cityId: CityId): void {
-    const placeIds = this.discoverGroups().find((group) => group.cityId === cityId)?.placeIds ?? [];
-    this.requestDraftAdd(placeIds);
   }
 
   private requestDraftAdd(placeIds: readonly string[]): void {
@@ -745,7 +666,6 @@ export class ExplorePage {
               error: null,
             };
         this.placeCityStates.update((states) => ({ ...states, [result.cityId]: next }));
-        this.resolvePendingDiscoverForCity(result.cityId);
         this.validatePendingDraftWhenCatalogsReady();
       });
   }
@@ -812,88 +732,6 @@ export class ExplorePage {
             };
         this.hubCityStates.update((states) => ({ ...states, [result.cityId]: next }));
       });
-  }
-
-  private watchDiscoverRequests(): void {
-    this.discoverRequest$
-      .pipe(
-        switchMap((request): Observable<DiscoverCityOutcome | null> => {
-          if (request === null) {
-            return of(null);
-          }
-          return merge(...CITY_IDS.map((cityId) =>
-            this.discoverApi.discover(cityId, request.theme).pipe(
-              map((response) => ({ request, cityId, response, error: null }) satisfies DiscoverCityOutcome),
-              catchError((error: unknown) =>
-                of({
-                  request,
-                  cityId,
-                  response: null,
-                  error: apiErrorMessage(error, `Could not load ${CITY_LABELS[cityId]} picks`),
-                } satisfies DiscoverCityOutcome),
-              ),
-            ),
-          ));
-        }),
-        takeUntilDestroyed(this.destroyRef),
-      )
-      .subscribe((outcome) => {
-        if (outcome === null) {
-          this.pendingDiscoverOutcomes.clear();
-          this.discoverState.set('idle');
-          this.discoverGroups.set([]);
-          this.discoverWarning.set(null);
-          this.discoverError.set(null);
-          this.discoverPlaceIds.set([]);
-          return;
-        }
-        this.acceptDiscoverOutcome(outcome);
-      });
-  }
-
-  private acceptDiscoverOutcome(outcome: DiscoverCityOutcome): void {
-    const { request, cityId } = outcome;
-    if (request.requestId !== this.discoverRequestId || request.theme !== this.activeDiscoverTheme()) {
-      return;
-    }
-
-    const cityState = this.placeCityStates()[cityId];
-    if (outcome.error === null && cityState.data === null && cityState.status === 'loading') {
-      this.pendingDiscoverOutcomes.set(cityId, outcome);
-      return;
-    }
-
-    this.setDiscoverCityGroup(createDiscoverCityGroup(outcome, cityState));
-  }
-
-  private resolvePendingDiscoverForCity(cityId: CityId): void {
-    const outcome = this.pendingDiscoverOutcomes.get(cityId);
-    if (outcome === undefined) {
-      return;
-    }
-    if (
-      outcome.request.requestId !== this.discoverRequestId
-      || outcome.request.theme !== this.activeDiscoverTheme()
-    ) {
-      this.pendingDiscoverOutcomes.delete(cityId);
-      return;
-    }
-    const cityState = this.placeCityStates()[cityId];
-    if (cityState.status === 'loading' && cityState.data === null) {
-      return;
-    }
-    this.pendingDiscoverOutcomes.delete(cityId);
-    this.setDiscoverCityGroup(createDiscoverCityGroup(outcome, cityState));
-  }
-
-  private setDiscoverCityGroup(group: DiscoverCityGroup): void {
-    const groups = this.discoverGroups().map((current) => current.cityId === group.cityId ? group : current);
-    this.discoverGroups.set(groups);
-    const summary = summarizeDiscoverGroups(groups);
-    this.discoverPlaceIds.set(summary.placeIds);
-    this.discoverWarning.set(summary.warning);
-    this.discoverError.set(summary.error);
-    this.discoverState.set(summary.state);
   }
 
   private checkHealth(): void {

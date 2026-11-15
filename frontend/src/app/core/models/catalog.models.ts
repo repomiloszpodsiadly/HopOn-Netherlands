@@ -15,8 +15,6 @@ export type PlaceCategory =
   | 'PARKS_NATURE'
   | 'LANDMARKS';
 
-export type DiscoverTheme = 'architecture' | 'culture' | 'green';
-
 export type HubMode = 'TRAIN' | 'TRAM' | 'METRO' | 'BUS' | 'FERRY' | 'UNKNOWN';
 
 export type Coordinates = Readonly<{
@@ -52,13 +50,6 @@ export type MobilityHubDto = Readonly<{
   longitude: number;
   modes: readonly HubMode[];
   source: string;
-}>;
-
-export type DiscoverDto = Readonly<{
-  cityId: CityId;
-  theme: DiscoverTheme;
-  description: string;
-  placeIds: readonly string[];
 }>;
 
 export type ProblemDetailDto = Readonly<{

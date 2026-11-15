@@ -30,7 +30,6 @@
           class="place-card"
           appPointerLight
           [class.place-card--selected]="view.selectedPlaceId === place.id"
-          [class.place-card--discover]="view.discoverPlaceIds.includes(place.id)"
           [class.place-card--featured]="featuredImageAttribution(place) !== null"
           [attr.aria-pressed]="view.selectedPlaceId === place.id"
           type="button"
@@ -65,14 +64,6 @@
               <span class="place-card__city">{{ cityName(place.cityId) }}</span>
               <span class="place-card__name">{{ place.name }}</span>
               <span class="place-card__description">{{ place.shortDescription }}</span>
-              @if (view.discoverPlaceIds.includes(place.id)) {
-                <span class="place-card__discover-tag">Discover pick</span>
-              }
-              <span class="place-card__tags">
-                @for (tag of place.tags.slice(0, 2); track tag) {
-                  <span>{{ displayTag(tag) }}</span>
-                }
-              </span>
             </span>
           </span>
           <span class="place-card__arrow" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="m9 6 6 6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg></span>

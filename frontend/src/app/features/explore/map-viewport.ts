@@ -35,7 +35,6 @@ type PlaceFeatureProperties = Readonly<{
   name: string;
   category: string;
   selected: boolean;
-  discover: boolean;
 }>;
 
 type PlaceFeatureCollection = FeatureCollection<Point, PlaceFeatureProperties>;
@@ -50,7 +49,6 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
   @Input({ required: true }) cities!: readonly CityDto[];
   @Input() places: readonly PlaceDto[] = [];
   @Input() selectedPlaceId: string | null = null;
-  @Input() discoverPlaceIds: readonly string[] = [];
   @Output() readonly placeSelected = new EventEmitter<string>();
   @ViewChild('mapHost', { static: true }) private readonly mapHost!: ElementRef<HTMLElement>;
 
@@ -85,8 +83,7 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
     const citiesChanged = changes['cities'] !== undefined;
     const selectionChanged = changes['selectedPlaceId'] !== undefined;
     const placesChanged = changes['places'] !== undefined
-      || selectionChanged
-      || changes['discoverPlaceIds'] !== undefined;
+      || selectionChanged;
     const selectionInvalidated = placesChanged
       && this.selectedPlaceId !== null
       && this.currentSelectedPlace() === null;
@@ -234,8 +231,8 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
         source: PLACES_SOURCE_ID,
         filter: ['!', ['has', 'point_count']],
         paint: {
-          'circle-color': ['case', ['get', 'selected'], '#b4653f', ['get', 'discover'], '#b39460', '#78765d'],
-          'circle-radius': ['case', ['get', 'selected'], 9, ['get', 'discover'], 7, 6],
+          'circle-color': ['case', ['get', 'selected'], '#b4653f', '#78765d'],
+          'circle-radius': ['case', ['get', 'selected'], 9, 6],
           'circle-stroke-color': '#ffffff',
           'circle-stroke-width': ['case', ['get', 'selected'], 3, 1.5],
         },
@@ -475,7 +472,6 @@ export class MapViewportComponent implements AfterViewInit, OnChanges, OnDestroy
           name: place.name,
           category: place.category,
           selected: place.id === this.selectedPlaceId,
-          discover: this.discoverPlaceIds.includes(place.id),
         },
         geometry: {
           type: 'Point',

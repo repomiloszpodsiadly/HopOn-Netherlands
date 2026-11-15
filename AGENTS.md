@@ -1,24 +1,59 @@
-# HopOn Netherlands — Project Guide
+# HopOn Netherlands
 
-Welcome to HopOn: a travel guide for Amsterdam, Rotterdam, and Utrecht, with an interactive map and day planner.
+HopOn is a local city guide and sightseeing planner for Amsterdam, Rotterdam and Utrecht. Users explore a shared place catalog and map, then create personal plans with stops from any of the three cities. See [README.md](README.md) for setup, user flows and technical background.
 
-## Project at a glance
+## Stack and runtime
 
-- The frontend is Angular 22 and TypeScript; the API is Spring Boot with Java 27.
-- Places come from a curated catalog. Saved plans use in-memory H2, so they reset when the backend stops.
-- The app runs on port 4200, the API on 8080, and Playwright on 4300. The frontend proxies `/api` to the backend.
-- The map uses MapLibre with OpenFreeMap styles and OpenStreetMap data. Keep attribution visible and make places and planning usable when the map is unavailable.
-- Keep each featured photo's source, author, license, and change notice with its catalog entry.
+- Frontend: Angular 22, strict TypeScript, standalone components, signals, RxJS, Tailwind CSS and MapLibre GL JS.
+- Backend: Java 27, Spring Boot 4.1.2, Spring Data JPA and embedded H2. Use the committed Gradle wrapper.
+- Node.js and npm requirements are declared in `frontend/package.json`; local verification uses Node 24.20.0 and npm 11.19.0.
+- Development frontend: port **4200**. API: loopback port **8080**. Playwright frontend: port **4300**. Angular proxies `/api` to Spring.
 
-## Before changing code
+## Repository layout
 
-- Read prompts in ascending order. Use `prompts/plan/MASTERPLAN.md` as the project plan and follow the active prompt through its handoff.
-- Check the current branch and worktree first; preserve unrelated user changes.
-- Follow existing Angular and Spring patterns. Keep catalog IDs, API contracts, validation, cancellation, and draft behavior stable unless the prompt calls for a change.
-- Prefer the project runtimes in `.tools`; add dependencies only when the task needs them.
-- Run focused checks for the change and report the commands and results. Run broader checks when the prompt asks for them.
-- The default Playwright map is deterministic. The live OpenFreeMap smoke is opt-in; a successful style response does not prove that map tiles loaded.
+| Path | Contents |
+| --- | --- |
+| `frontend/src/app/core/` | API clients, shared types and browser-tab state services |
+| `frontend/src/app/features/explore/` | Catalog, map, place details and Discover |
+| `frontend/src/app/features/plans/` | Plan creation, saved-plan list and editing |
+| `frontend/src/app/features/shared/` | Navigation, dialogs and shared UI |
+| `frontend/e2e/` | Playwright scenarios and deterministic map fixtures |
+| `backend/src/main/java/com/hopon/` | Catalog, Discover, health, transit and plan packages |
+| `backend/src/main/resources/catalog/` | City, place and mobility-hub snapshots with provenance |
+| `backend/src/test/` | Backend unit and integration tests |
+| `frontend/public/assets/` | Application imagery and photo attribution |
+| `.tools/run-backend.ps1` | Windows JDK selection and API startup |
 
-## Git
+Plan backend code is organized into `plans/api` for HTTP contracts, `plans/application` for use cases, and `plans/persistence` for JPA entities and repositories.
 
-Only stage, commit, or push with the user's explicit authorization. Keep unrelated files out of commits and never force-push unless asked.
+## Domain and state
+
+- Supported city IDs are `amsterdam`, `rotterdam` and `utrecht`. Explore loads them together. A plan's `cityId` is its starting/reference city; its ordered places may come from all three cities.
+- The backend allows **6 saved plans**, each with **0–12 places**, a **30-character name** and an optional **500-character description**. Duplicate names receive the first available numbered suffix on creation.
+- Saved plans belong to the running API instance, with no user accounts. H2 is in memory: browser refresh keeps plans, but stopping the backend clears them.
+- Drafts and the current-plan ID use tab-scoped `sessionStorage`. H2 is the source of saved-plan content.
+- Adding places automatically saves the current plan. Autosave reuses a persisted UUID and the idempotent `PUT /api/plans/{id}/autosave` endpoint. Name, description, removal and ordering edits in the saved-plan editor use **Save changes**.
+- Discover ranks catalog categories and tags deterministically. Nearby hubs use approximate straight-line distances. Neither feature provides AI recommendations, live transit schedules or route optimization.
+
+## Code conventions
+
+- Keep UI copy and documentation in English. Angular components are standalone, use `OnPush` change detection and obtain dependencies with `inject()`. Spring services and controllers use constructor injection.
+- Use signals and computed values for view state, and RxJS for asynchronous requests. Keep subscriptions tied to the component lifecycle, cancel superseded requests, and retain usable results during partial city failures.
+- Keep HTTP mapping at controller boundaries, business validation and transactions in application services, and database access in repositories. Plan creation is synchronized through transaction commit; place order and timestamps are observable API behavior.
+- Place frontend unit tests beside their implementation as `*.spec.ts`. Preserve keyboard focus, accessible labels, touch targets and responsive layouts when changing UI components.
+- Catalog IDs are stable identifiers, not display names. Validate catalog/provenance consistency and retain map and photo attribution. Catalog and plan workflows must remain usable without a working map.
+- Before removing a symbol, check imports, Angular template bindings, API callers and tests. Use existing dependencies and avoid unrelated formatting.
+
+## Verification
+
+Run checks appropriate to the change; commands and prerequisites are documented in [README.md](README.md).
+
+- Backend: `cd backend`, then `.\gradlew.bat test`; the full build gate is `.\gradlew.bat clean test bootJar`.
+- Frontend: from `frontend/`, run `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run test` and `npm.cmd run build`.
+- Browser: with the API running on 8080, use `npm.cmd run test:e2e` from `frontend/`. Playwright starts its own frontend and runs one worker against the real API/H2. Tests track and clean up only their own plans.
+- The normal E2E map style is deterministic. The external OpenFreeMap smoke is opt-in; see [the E2E guide](frontend/e2e/README.md). Style readiness alone does not verify live tile delivery.
+- Keep assertions tied to agreed behavior. Update obsolete fixtures or expectations without dropping scenarios or hiding failures. Report which checks actually ran and any remaining limitations.
+
+## Repository hygiene
+
+Inspect the working tree before editing and preserve unrelated user changes. Do not restart the API or clear browser storage without accounting for existing plans and drafts. Keep local runtimes, logs, generated output and credentials out of commits. Stage, commit, push and change repository visibility only with the user's explicit authorization.

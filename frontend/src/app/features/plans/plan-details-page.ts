@@ -3,12 +3,13 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { ChangeDetectionStrategy, Component, DestroyRef, computed, effect, inject, signal, ViewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { catchError, distinctUntilChanged, filter, forkJoin, map, of, Subject, switchMap, tap } from 'rxjs';
+import { catchError, distinctUntilChanged, filter, map, of, Subject, switchMap, tap } from 'rxjs';
+import { loadAllCityPlaces } from '../../core/api/all-city-places';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlacesApiService } from '../../core/api/places-api.service';
 import { PlansApiService, UnexpectedPlanResponseError } from '../../core/api/plans-api.service';
-import { CITY_IDS, CityId, PlaceDto } from '../../core/models/catalog.models';
-import { PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../../core/models/plan.models';
+import { CITY_IDS, CITY_LABELS, CityId, PlaceDto } from '../../core/models/catalog.models';
+import { MAX_PLAN_PLACES, PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../../core/models/plan.models';
 import { ConfirmDialogComponent } from '../shared/confirm-dialog';
 import { MainNavigationComponent } from '../shared/main-navigation';
 import { PointerLightDirective } from '../shared/pointer-light';
@@ -28,19 +29,7 @@ type CatalogResult = Readonly<{
   error: string | null;
 }>;
 
-type CityCatalogResult = Readonly<{
-  cityId: CityId;
-  places: readonly PlaceDto[] | null;
-  error: string | null;
-}>;
-
 type PlaceRow = Readonly<{ id: string; place: PlaceDto | null }>;
-
-const CITY_NAMES: Readonly<Record<CityId, string>> = {
-  amsterdam: 'Amsterdam',
-  rotterdam: 'Rotterdam',
-  utrecht: 'Utrecht',
-};
 
 @Component({
   selector: 'app-plan-details-page',
@@ -108,7 +97,7 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
   });
   readonly availablePlaces = computed(() => {
     const saved = this.plan();
-    if (saved === null || this.catalogCityId() !== saved.cityId || this.placeIds().length >= 12) {
+    if (saved === null || this.catalogCityId() !== saved.cityId || this.placeIds().length >= MAX_PLAN_PLACES) {
       return [];
     }
     const selected = new Set(this.placeIds());
@@ -141,26 +130,8 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
           this.catalogError.set(null);
           this.catalogCityId.set(null);
           this.places.set([]);
-          return forkJoin(CITY_IDS.map((catalogCityId) => this.placesApi.getPlaces(catalogCityId).pipe(
-            map((places) => ({ cityId: catalogCityId, places, error: null }) satisfies CityCatalogResult),
-            catchError((error: unknown) => of({
-              cityId: catalogCityId,
-              places: null,
-              error: apiErrorMessage(error, `Could not load ${CITY_NAMES[catalogCityId]} places`),
-            } satisfies CityCatalogResult)),
-          ))).pipe(
-            map((catalogs) => {
-              const unavailableCities = catalogs
-                .filter((catalog) => catalog.error !== null)
-                .map((catalog) => CITY_NAMES[catalog.cityId]);
-              return {
-                cityId,
-                places: catalogs.flatMap((catalog) => catalog.places ?? []),
-                error: unavailableCities.length === 0
-                  ? null
-                  : `Place details could not be loaded for ${unavailableCities.join(', ')}.`,
-              } satisfies CatalogResult;
-            }),
+          return loadAllCityPlaces(this.placesApi).pipe(
+            map((catalog) => ({ ...catalog, cityId }) satisfies CatalogResult),
           );
         }),
         takeUntilDestroyed(this.destroyRef),
@@ -192,7 +163,7 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
   }
 
   cityName(cityId: CityId): string {
-    return CITY_NAMES[cityId];
+    return CITY_LABELS[cityId];
   }
 
   formatDate(value: string): string {
@@ -455,7 +426,7 @@ export class PlanDetailsPage implements PlanDetailsNavigationGuard {
     } else if (trimmedName.length > PLAN_NAME_MAX_LENGTH && includeNameLimit) {
       errors.push('Plan names can be at most 30 characters.');
     }
-    if (this.placeIds().length > 12) {
+    if (this.placeIds().length > MAX_PLAN_PLACES) {
       errors.push('A saved plan can contain up to 12 places.');
     }
     if (this.description().length > PLAN_DESCRIPTION_MAX_LENGTH) {

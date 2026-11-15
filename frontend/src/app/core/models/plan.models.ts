@@ -3,6 +3,7 @@ import { CityId } from './catalog.models';
 export const PLAN_NAME_MAX_LENGTH = 30;
 export const PLAN_DESCRIPTION_MAX_LENGTH = 500;
 export const MAX_SAVED_PLANS = 6;
+export const MAX_PLAN_PLACES = 12;
 
 /** A server-created plan may receive the first available numbered name. */
 export function isAllocatedPlanName(requested: string, allocated: string): boolean {

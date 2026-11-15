@@ -2,7 +2,7 @@ import { HttpClient, HttpResponse } from '@angular/common/http';
 import { Injectable, inject } from '@angular/core';
 import { map, Observable } from 'rxjs';
 import { isCityId } from '../models/catalog.models';
-import { PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../models/plan.models';
+import { MAX_PLAN_PLACES, PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../models/plan.models';
 
 export class UnexpectedPlanResponseError extends Error {
   constructor() {
@@ -113,7 +113,7 @@ function asPlanResponse(value: unknown): PlanResponse | null {
     || typeof cityId !== 'string'
     || !isCityId(cityId)
     || !Array.isArray(placeIds)
-    || placeIds.length > 12
+    || placeIds.length > MAX_PLAN_PLACES
     || !placeIds.every((placeId) => typeof placeId === 'string' && placeId.length > 0)
     || new Set(placeIds).size !== placeIds.length
     || !isUtcInstant(createdAt)

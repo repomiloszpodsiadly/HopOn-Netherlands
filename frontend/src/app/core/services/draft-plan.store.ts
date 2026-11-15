@@ -2,7 +2,7 @@ import { DOCUMENT } from '@angular/common';
 import { Injectable, inject, signal } from '@angular/core';
 import { CityId, PlaceDto, isCityId } from '../models/catalog.models';
 import { DraftAddResult, DraftPlan } from '../models/draft-plan.models';
-import { PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH } from '../models/plan.models';
+import { MAX_PLAN_PLACES, PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH } from '../models/plan.models';
 
 export const DRAFT_PLAN_STORAGE_KEY = 'hopon:draft:v1';
 const DEFAULT_PLAN_NAME = 'My day out';
@@ -172,7 +172,7 @@ export class DraftPlanStore {
     if (placeIds.length === 0) {
       return { status: 'no-verified-places' };
     }
-    if (placeIds.length > 12) {
+    if (placeIds.length > MAX_PLAN_PLACES) {
       return { status: 'limit-reached' };
     }
 
@@ -183,7 +183,7 @@ export class DraftPlanStore {
     if (newIds.length === 0) {
       return { status: 'already-added' };
     }
-    if ((existing?.placeIds.length ?? 0) + newIds.length > 12) {
+    if ((existing?.placeIds.length ?? 0) + newIds.length > MAX_PLAN_PLACES) {
       return { status: 'limit-reached' };
     }
 

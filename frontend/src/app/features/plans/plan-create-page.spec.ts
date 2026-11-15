@@ -168,6 +168,28 @@ describe('PlanCreatePage', () => {
     http.expectNone('/api/plans');
   });
 
+  it('submits an independent immutable snapshot without freezing the store draft', async () => {
+    const { component, http } = await startPage('/plans/new?city=amsterdam');
+    const submittedDraft = component.draftStore.draft()!;
+
+    component.save();
+    const request = http.expectOne('/api/plans');
+    const snapshot = request.request.body as PlanUpsertRequest;
+    expect(Object.isFrozen(submittedDraft)).toBe(false);
+    expect(Object.isFrozen(submittedDraft.placeIds)).toBe(false);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.placeIds)).toBe(true);
+    expect(snapshot.placeIds).not.toBe(submittedDraft.placeIds);
+    expect(component.draftStore.draft()).toBe(submittedDraft);
+
+    request.flush({ detail: 'Try again.' }, { status: 400, statusText: 'Bad Request' });
+    component.onNameInput({ target: { value: 'A later edit' } } as unknown as Event);
+    expect(component.draftStore.draft()?.name).toBe('A later edit');
+    expect(submittedDraft.name).toBe('My day out');
+    expect(snapshot.name).toBe('My day out');
+    expect(component.canSave()).toBe(true);
+  });
+
   it('restores, reorders and removes stops while persisting their exact order', async () => {
     storeDraft(PLACE_IDS.slice(0, 3));
     const { harness, http } = await startPage('/plans/new');

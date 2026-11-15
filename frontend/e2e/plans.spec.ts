@@ -282,7 +282,7 @@ test('opens the current plan map from the stops panel on desktop and mobile', as
     const save = page.getByRole('button', { name: 'Save changes', exact: true });
     const usePlan = page.locator('.details-form-actions').getByRole('button', { name: 'Use this plan', exact: true });
     await expect(usePlan).toBeEnabled();
-    await expect(page.locator('.details-city-label > span')).toHaveCount(0);
+    await expect(page.locator('.details-city-label')).toHaveCount(0);
     await expect(exploreMap).toBeEnabled();
     const globe = exploreMap.locator('img');
     await expect.poll(() => globe.evaluate(image => (image as HTMLImageElement).naturalWidth)).toBeGreaterThan(0);
@@ -1454,5 +1454,92 @@ test('captures the Saved Plans screens at every required viewport', async ({ pag
     throw error;
   } finally {
     await cleanupCreatedPlans(page, testPlanIds, testFailed);
+  }
+});
+
+test('keeps plan counts and map actions aligned across viewport widths', async ({ page }) => {
+  const screenshotsDirectory = join(process.cwd(), 'test-results', 'hop010-visual-polish');
+  await mkdir(screenshotsDirectory, { recursive: true });
+  const plan = {
+    id: randomUUID(), name: 'A quiet day in Utrecht', description: '', cityId: 'utrecht',
+    placeIds: ['utrecht-way-857852772'], createdAt: '2026-11-14T10:00:00Z', updatedAt: '2026-11-14T10:00:00Z',
+  };
+  await page.route('**/api/plans', route => route.fulfill({ json: [plan] }));
+  await page.route(`**/api/plans/${plan.id}`, route => route.fulfill({ json: plan }));
+
+  const viewports = [
+    { width: 320, height: 640 }, { width: 360, height: 800 }, { width: 390, height: 844 },
+    { width: 430, height: 932 }, { width: 600, height: 900 }, { width: 760, height: 1000 },
+    { width: 768, height: 1024 }, { width: 900, height: 700 }, { width: 999, height: 800 },
+    { width: 1000, height: 800 }, { width: 1100, height: 860 }, { width: 1280, height: 720 },
+    { width: 1440, height: 900 }, { width: 1536, height: 864 }, { width: 1920, height: 1080 },
+  ];
+
+  for (const viewport of viewports) {
+    await page.setViewportSize(viewport);
+    await page.goto('/plans');
+    const summary = page.locator('.plans-collection-count');
+    const createButton = page.getByRole('link', { name: 'Create a plan', exact: true });
+    await expect(summary).toHaveText('1 plan · 1 place');
+    await expect(createButton).toBeVisible();
+    const summaryBounds = await summary.boundingBox();
+    const createBounds = await createButton.boundingBox();
+    const actionsBounds = await page.locator('.plans-list-heading__actions').boundingBox();
+    const headingBounds = await page.locator('.plans-list-heading').boundingBox();
+    expect(summaryBounds).not.toBeNull();
+    expect(createBounds).not.toBeNull();
+    expect(actionsBounds).not.toBeNull();
+    expect(headingBounds).not.toBeNull();
+    expect(Math.abs(summaryBounds!.y + summaryBounds!.height / 2 - createBounds!.y - createBounds!.height / 2), `Plan count and create button should align at ${viewport.width}px`)
+      .toBeLessThanOrEqual(1);
+    expect(createBounds!.x + createBounds!.width).toBeLessThanOrEqual(summaryBounds!.x);
+    expect(Math.abs(headingBounds!.x + headingBounds!.width - summaryBounds!.x - summaryBounds!.width), `Plan count should sit at the right edge at ${viewport.width}px`)
+      .toBeLessThanOrEqual(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), `Saved Plans should fit at ${viewport.width}px`)
+      .toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: join(screenshotsDirectory, `saved-plans-${viewport.width}.png`) });
+
+    await page.goto(`/plans/${plan.id}`);
+    await expect(page.locator('.details-city-label')).toHaveCount(0);
+    await expect(page.locator('#plan-details-title')).toHaveText(plan.name);
+    await expect(page.locator('#plan-details-title')).toBeVisible();
+    const stopsCount = page.locator('.details-stop-count');
+    const countCenter = await stopsCount.evaluate(element => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const text = range.getBoundingClientRect();
+      const pill = element.getBoundingClientRect();
+      return {
+        x: Math.abs(text.x + text.width / 2 - pill.x - pill.width / 2),
+        y: Math.abs(text.y + text.height / 2 - pill.y - pill.height / 2),
+      };
+    });
+    expect(countCenter.x, `Stop count text should be horizontally centered at ${viewport.width}px`).toBeLessThanOrEqual(1);
+    expect(countCenter.y, `Stop count text should be vertically centered at ${viewport.width}px`).toBeLessThanOrEqual(1);
+    const exploreMap = page.getByRole('button', { name: 'Explore map', exact: true });
+    await expect(exploreMap).toBeVisible();
+    const stopsBounds = await stopsCount.boundingBox();
+    const mapBounds = await exploreMap.boundingBox();
+    const mapIconBounds = await exploreMap.locator('img').boundingBox();
+    const mapTextBounds = await exploreMap.locator('span').boundingBox();
+    const routeActionsBounds = await page.locator('.details-route-actions').boundingBox();
+    const headingCopyBounds = await page.locator('.details-section-heading > div').first().boundingBox();
+    expect(stopsBounds).not.toBeNull();
+    expect(mapBounds).not.toBeNull();
+    expect(mapIconBounds).not.toBeNull();
+    expect(mapTextBounds).not.toBeNull();
+    expect(routeActionsBounds).not.toBeNull();
+    expect(headingCopyBounds).not.toBeNull();
+    expect(Math.abs(stopsBounds!.y + stopsBounds!.height / 2 - mapBounds!.y - mapBounds!.height / 2), `Stop count and map button should align at ${viewport.width}px`)
+      .toBeLessThanOrEqual(1);
+    expect(Math.abs(mapIconBounds!.y + mapIconBounds!.height / 2 - mapTextBounds!.y - mapTextBounds!.height / 2), `Map icon and label should align at ${viewport.width}px`)
+      .toBeLessThanOrEqual(1);
+    if (routeActionsBounds!.x >= headingCopyBounds!.x + headingCopyBounds!.width - 1) {
+      expect(Math.abs(routeActionsBounds!.y + routeActionsBounds!.height / 2 - headingCopyBounds!.y - headingCopyBounds!.height / 2), `Plan actions should be vertically centered beside the heading at ${viewport.width}px`)
+        .toBeLessThanOrEqual(1);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth), `Plan details should fit at ${viewport.width}px`)
+      .toBeLessThanOrEqual(viewport.width);
+    await page.screenshot({ path: join(screenshotsDirectory, `plan-details-${viewport.width}.png`) });
   }
 });

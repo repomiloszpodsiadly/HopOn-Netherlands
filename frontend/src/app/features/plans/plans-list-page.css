@@ -6,12 +6,13 @@
 .plans-back-places { display: inline-flex; min-height: 44px; flex: 0 0 auto; align-items: center; gap: 8px; padding: 0 13px; border: 1px solid #dfd1bb; border-radius: 999px; background: #fffcf6; color: #66634e; font-size: 12px; font-weight: 650; text-decoration: none; transition: background-color 180ms ease, border-color 180ms ease; }
 .plans-back-places svg { width: 16px; height: 16px; }
 .plans-back-places:hover { border-color: #bca682; background: #f6eddf; }
-.plans-list-heading > .plans-button { gap: 10px; }
-.plans-list-heading > .plans-button > svg { display: block; width: 20px; height: 20px; flex: 0 0 auto; }
-.plans-collection-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; color: #746e5d; font-size: 12px; }
+.plans-list-heading__actions { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 10px; }
+.plans-list-heading__actions > .plans-button { gap: 10px; }
+.plans-list-heading__actions > .plans-button > svg { display: block; width: 20px; height: 20px; flex: 0 0 auto; }
+.plans-collection-count { flex: 0 0 auto; padding: 6px 10px; border: 1px solid #e9ddca; border-radius: 999px; background: #faf3e7; color: #746e5d; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.plans-collection-count i { padding-inline: 4px; color: #ad916d; font-style: normal; }
+.plans-collection-heading { display: flex; flex: 0 0 auto; align-items: center; gap: 12px; color: #746e5d; font-size: 12px; }
 .plans-collection-heading p { margin: 0; font-weight: 700; letter-spacing: .4px; }
-.plans-collection-heading > span { padding: 5px 10px; border: 1px solid #e9ddca; border-radius: 999px; background: #faf3e7; font-variant-numeric: tabular-nums; }
-.plans-collection-heading i { padding-inline: 4px; color: #ad916d; font-style: normal; }
 
 .saved-plan-list { gap: 18px; padding: 6px; }
 .saved-plan-card { display: block; padding: 0; border-color: #e4d4bd; border-radius: 22px; background: #fffcf6; box-shadow: 0 4px 15px rgb(115 85 46 / 7%); }
@@ -52,11 +53,13 @@
 }
 
 @media (max-width: 760px) {
+  .plans-list-heading { width: 100%; }
   .plans-title-row { flex-wrap: nowrap; gap: 10px; }
   .plans-title-row h1 { font-size: 30px; white-space: nowrap; }
   .plans-back-places { gap: 6px; padding-inline: 10px; font-size: 11px; }
   .plans-back-places svg { width: 14px; height: 14px; }
-  .plans-list-heading > .plans-button { min-width: 0; min-height: 44px; }
+  .plans-list-heading__actions { width: 100%; align-self: stretch; justify-content: flex-end; }
+  .plans-list-heading__actions > .plans-button { min-width: 0; min-height: 44px; }
   .plans-collection-heading { margin-bottom: 12px; font-size: 11px; }
   .saved-plan-list { gap: 14px; }
   .saved-plan-card__open { min-height: 220px; grid-template-columns: 104px minmax(0, 1fr); }
@@ -71,6 +74,9 @@
 @media (max-width: 390px) {
   .plans-title-row h1 { font-size: 28px; }
   .plans-back-places { padding-inline: 8px; }
+  .plans-list-heading__actions { gap: 8px; }
+  .plans-list-heading__actions > .plans-collection-count { padding-inline: 7px; font-size: 11px; }
+  .plans-list-heading__actions > .plans-button { width: auto; flex: 0 0 auto; gap: 7px; padding-inline: 11px; font-size: 13px; white-space: nowrap; }
 }
 .plans-capacity-notice {
   margin: 0;

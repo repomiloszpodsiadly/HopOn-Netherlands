@@ -28,7 +28,6 @@
         <div class="details-settings">
           <header class="plan-details-heading">
             <div class="plan-details-heading__copy">
-              <p class="plans-eyebrow details-city-label">Starts in {{ cityName(savedPlan.cityId) }}</p>
               <div class="plan-heading-row">
                 <h1 id="plan-details-title">{{ name() || 'Untitled plan' }}</h1>
                 <a class="plan-back-link" appPointerLight routerLink="/plans">
@@ -94,7 +93,7 @@
               <span class="details-stop-count">{{ placeIds().length }} / 12</span>
               <button class="plans-button plans-button--secondary details-explore-map" appPointerLight type="button" [disabled]="!canExploreMap()" (click)="exploreMap()">
                 <img src="/assets/brand/explore-globe.svg" width="28" height="28" alt="" />
-                Explore map
+                <span>Explore map</span>
               </button>
             </div>
           </div>

@@ -182,7 +182,7 @@
   margin: 9px 0 12px;
 }
 
-.plans-list-heading > .plans-button {
+.plans-list-heading__actions > .plans-button {
   flex: 0 0 auto;
   min-width: 168px;
 }
@@ -453,7 +453,7 @@
     margin-bottom: 27px;
   }
 
-  .plans-list-heading > .plans-button {
+  .plans-list-heading__actions > .plans-button {
     width: fit-content;
   }
 }
@@ -484,10 +484,6 @@
   }
 
   .plans-button {
-    width: 100%;
-  }
-
-  .plans-list-heading > .plans-button {
     width: 100%;
   }
 

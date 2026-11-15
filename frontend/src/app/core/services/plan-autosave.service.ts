@@ -2,7 +2,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Injectable, effect, inject, signal, untracked } from '@angular/core';
 import { apiErrorMessage } from '../api/api-error';
 import { PlansApiService, UnexpectedPlanResponseError } from '../api/plans-api.service';
-import { isAllocatedPlanName, PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../models/plan.models';
+import { MAX_PLAN_PLACES, isAllocatedPlanName, PLAN_NAME_MAX_LENGTH, PLAN_DESCRIPTION_MAX_LENGTH, PlanResponse, PlanUpsertRequest } from '../models/plan.models';
 import { ActivePlanStore } from './active-plan.store';
 import { DraftPlanStore } from './draft-plan.store';
 
@@ -30,7 +30,7 @@ export class PlanAutosaveService {
   save(): void {
     if (this.pending()) return;
     const current = this.drafts.draft();
-    if (!current || current.placeIds.length > 12 || current.name.trim().length > PLAN_NAME_MAX_LENGTH
+    if (!current || current.placeIds.length > MAX_PLAN_PLACES || current.name.trim().length > PLAN_NAME_MAX_LENGTH
       || current.description.length > PLAN_DESCRIPTION_MAX_LENGTH) {
       this.error.set('Use a plan name of up to 30 characters, a description of up to 500 characters and at most 12 places before saving.');
       return;

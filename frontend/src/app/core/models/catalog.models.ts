@@ -2,6 +2,12 @@ export const CITY_IDS = ['amsterdam', 'rotterdam', 'utrecht'] as const;
 
 export type CityId = (typeof CITY_IDS)[number];
 
+export const CITY_LABELS: Readonly<Record<CityId, string>> = {
+  amsterdam: 'Amsterdam',
+  rotterdam: 'Rotterdam',
+  utrecht: 'Utrecht',
+};
+
 export type PlaceCategory =
   | 'ARCHITECTURE'
   | 'MUSEUMS'

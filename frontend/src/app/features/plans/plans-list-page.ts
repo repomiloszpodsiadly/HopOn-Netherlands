@@ -4,7 +4,7 @@ import { RouterLink } from '@angular/router';
 import { catchError, map, of, startWith, Subject, switchMap } from 'rxjs';
 import { apiErrorMessage } from '../../core/api/api-error';
 import { PlansApiService } from '../../core/api/plans-api.service';
-import { CityId } from '../../core/models/catalog.models';
+import { CITY_LABELS, CityId } from '../../core/models/catalog.models';
 import { MAX_SAVED_PLANS, PlanResponse } from '../../core/models/plan.models';
 import { MainNavigationComponent } from '../shared/main-navigation';
 import { PointerLightDirective } from '../shared/pointer-light';
@@ -13,12 +13,6 @@ type PlansListResult = Readonly<{
   plans: readonly PlanResponse[] | null;
   error: string | null;
 }>;
-
-const CITY_NAMES: Readonly<Record<CityId, string>> = {
-  amsterdam: 'Amsterdam',
-  rotterdam: 'Rotterdam',
-  utrecht: 'Utrecht',
-};
 
 @Component({
   selector: 'app-plans-list-page',
@@ -67,7 +61,7 @@ export class PlansListPage {
   }
 
   cityName(cityId: CityId): string {
-    return CITY_NAMES[cityId];
+    return CITY_LABELS[cityId];
   }
 
   formatDate(value: string): string {

@@ -6,8 +6,6 @@ import com.hopon.places.Place;
 import com.hopon.plans.api.InvalidPlanRequestException;
 import com.hopon.plans.api.PlanNotFoundException;
 import com.hopon.plans.api.PlanLimitReachedException;
-import com.hopon.plans.api.PlanResponse;
-import com.hopon.plans.api.PlanUpsertRequest;
 import com.hopon.plans.persistence.PlanEntity;
 import com.hopon.plans.persistence.PlanRepository;
 import org.springframework.stereotype.Service;
@@ -55,19 +53,19 @@ public class PlanService {
     }
 
     @Transactional(readOnly = true)
-    public List<PlanResponse> getAll() {
+    public List<PlanResult> getAll() {
         return planRepository.findAll().stream()
                 .sorted(PLAN_ORDER)
-                .map(PlanService::toResponse)
+                .map(PlanService::toResult)
                 .toList();
     }
 
     @Transactional(readOnly = true)
-    public PlanResponse get(UUID id) {
-        return toResponse(findPlan(id));
+    public PlanResult get(UUID id) {
+        return toResult(findPlan(id));
     }
 
-    public PlanResponse create(PlanUpsertRequest request) {
+    public PlanResult create(PlanCommand request) {
         NormalizedPlan normalized = validate(request);
         // Keep allocation locked through commit: concurrent tabs cannot take a seventh slot
         // or allocate the same generated name in this single-process, in-memory app.
@@ -76,7 +74,7 @@ public class PlanService {
         }
     }
 
-    public PlanResponse autosave(UUID id, PlanUpsertRequest request) {
+    public PlanResult autosave(UUID id, PlanCommand request) {
         NormalizedPlan normalized = validate(request);
         synchronized (creationLock) {
             return writeTransaction.execute(status -> {
@@ -91,7 +89,7 @@ public class PlanService {
         }
     }
 
-    private PlanResponse createNew(UUID id, NormalizedPlan normalized) {
+    private PlanResult createNew(UUID id, NormalizedPlan normalized) {
         List<PlanEntity> existing = planRepository.findAll();
         if (existing.size() >= MAX_PLAN_COUNT) {
             throw new PlanLimitReachedException();
@@ -114,19 +112,19 @@ public class PlanService {
                 normalized.placeIds(),
                 now,
                 now);
-        return toResponse(planRepository.saveAndFlush(plan));
+        return toResult(planRepository.saveAndFlush(plan));
     }
 
     @Transactional
-    public PlanResponse update(UUID id, PlanUpsertRequest request) {
+    public PlanResult update(UUID id, PlanCommand request) {
         PlanEntity existing = findPlan(id);
         NormalizedPlan normalized = validate(request);
         return replace(existing, normalized);
     }
 
-    private PlanResponse replace(PlanEntity existing, NormalizedPlan normalized) {
+    private PlanResult replace(PlanEntity existing, NormalizedPlan normalized) {
         if (matches(existing, normalized)) {
-            return toResponse(existing);
+            return toResult(existing);
         }
 
         Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
@@ -134,7 +132,7 @@ public class PlanService {
             now = existing.getUpdatedAt().plus(1, ChronoUnit.MICROS);
         }
         existing.replaceWith(normalized.name(), normalized.description(), normalized.cityId(), normalized.placeIds(), now);
-        return toResponse(planRepository.saveAndFlush(existing));
+        return toResult(planRepository.saveAndFlush(existing));
     }
 
     @Transactional
@@ -146,7 +144,7 @@ public class PlanService {
         return planRepository.findById(id).orElseThrow(PlanNotFoundException::new);
     }
 
-    private NormalizedPlan validate(PlanUpsertRequest request) {
+    private NormalizedPlan validate(PlanCommand request) {
         if (request == null) {
             throw new InvalidPlanRequestException("A plan request body is required.");
         }
@@ -199,8 +197,8 @@ public class PlanService {
                 && existing.getPlaceIds().equals(normalized.placeIds());
     }
 
-    private static PlanResponse toResponse(PlanEntity plan) {
-        return new PlanResponse(
+    private static PlanResult toResult(PlanEntity plan) {
+        return new PlanResult(
                 plan.getId(),
                 plan.getName(),
                 plan.getDescription(),

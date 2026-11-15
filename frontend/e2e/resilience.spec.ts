@@ -160,7 +160,8 @@ test('keeps search and tab draft usable when the OpenFreeMap style is unavailabl
   await card.scrollIntoViewIfNeeded();
   await card.click();
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
-  await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
+  await expect(page.locator('.draft-feedback').filter({ hasText: 'Added 1 place to the tab draft' }))
+    .toHaveText('Added 1 place to the tab draft.');
   await page.setViewportSize({ width: 390, height: 844 });
   const draftLayout = await page.evaluate(() => {
     const draft = document.querySelector('.draft-panel')!;
@@ -188,7 +189,8 @@ test('Map navigation focuses the shared map and keeps the tab draft when tiles a
   await openExplorePlaceByName(page, 'Erasmus Bridge');
   await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
-  await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
+  await expect(page.locator('.draft-feedback').filter({ hasText: 'Added 1 place to the tab draft' }))
+    .toHaveText('Added 1 place to the tab draft.');
   const draftBeforeNavigation = await page.evaluate(() =>
     JSON.parse(sessionStorage.getItem('hopon:draft:v1') ?? 'null'),
   );
@@ -257,5 +259,6 @@ test('keeps catalog selection usable after map tiles fail following style load',
   await openExplorePlaceByName(page, 'Erasmus Bridge');
   await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   await page.locator('.place-detail').getByRole('button', { name: 'Add to plan' }).click();
-  await expect(page.locator('.draft-feedback')).toContainText('Added 1 place to the tab draft');
+  await expect(page.locator('.draft-feedback').filter({ hasText: 'Added 1 place to the tab draft' }))
+    .toHaveText('Added 1 place to the tab draft.');
 });

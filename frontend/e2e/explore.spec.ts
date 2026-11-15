@@ -32,9 +32,7 @@ test('loads one shared catalog from all three cities without a city picker', asy
   await page.goto('/');
   await expect(page.locator('.place-card').first()).toBeVisible();
   await expect(page.locator('.place-card')).toHaveCount(40);
-  await expect(page.locator('.city-scope')).toContainText('Amsterdam');
-  await expect(page.locator('.city-scope')).toContainText('Rotterdam');
-  await expect(page.locator('.city-scope')).toContainText('Utrecht');
+  await expect(page.locator('.city-scope')).toHaveCount(0);
   await expect(page.getByRole('combobox')).toHaveCount(0);
   await expect(page).toHaveURL(/\/$/);
   await expect.poll(() => [...requestedCityIds].sort()).toEqual(['amsterdam', 'rotterdam', 'utrecht']);
@@ -345,12 +343,14 @@ test('keeps the shared draft CTA before the catalog and opens the selected POI c
 
   await page.setViewportSize({ width: 390, height: 844 });
   const placeName = 'Erasmus Bridge';
-  await openExplorePlaceByName(page, placeName);
+  const selectedCard = await openExplorePlaceByName(page, placeName);
   await expect(page.locator('.place-detail')).toContainText('Rotterdam');
   const saved = await confirmMapAddition(page);
   await expect(page.locator('.draft-count')).toHaveText('1 / 12');
   await expect(page.locator('.draft-panel')).toContainText(saved.id ? 'CURRENT PLAN' : '');
   await expect(page.locator('.draft-panel')).not.toContainText('Temporary');
+  await page.getByRole('button', { name: 'Close place details', exact: true }).click();
+  await expect(selectedCard).toBeFocused();
   const reviewLink = page.getByRole('link', { name: 'Review current plan' });
   await reviewLink.focus();
   await expect(reviewLink).toBeFocused();
@@ -402,7 +402,6 @@ test('captures the actual initial Explore viewport on compact phones', async ({ 
       return {
         search: bounds('#place-search'),
         filters: bounds('.filter-row'),
-        discover: bounds('.discover-panel'),
         map: bounds('.map-viewport__canvas'),
         draft: bounds('.draft-editor-link'),
         navigation: bounds('.bottom-nav'),
@@ -413,7 +412,7 @@ test('captures the actual initial Explore viewport on compact phones', async ({ 
     expect(layout.documentWidth).toBeLessThanOrEqual(viewport.width);
     expect(layout.search).not.toBeNull();
     expect(layout.filters?.height).toBeGreaterThan(0);
-    expect(layout.discover?.height).toBeGreaterThan(0);
+    await expect(page.locator('.discover-panel')).toHaveCount(0);
     expect(layout.map?.y).toBeLessThan(layout.navigation!.y);
     expect(layout.map?.y).toBeLessThan(viewport.height * 0.67);
     await expect(page.locator('.bottom-nav')).toBeVisible();
@@ -421,7 +420,7 @@ test('captures the actual initial Explore viewport on compact phones', async ({ 
       path: join(screenshotsDirectory, `explore-initial-${viewport.width}x${viewport.height}.png`),
       fullPage: false,
     });
-    for (const selector of ['.filter-row', '.discover-panel']) {
+    for (const selector of ['.filter-row', '.draft-panel']) {
       const section = page.locator(selector);
       await section.evaluate((element) => element.scrollIntoView({ block: 'center', behavior: 'instant' }));
       const sectionBounds = await section.boundingBox();
@@ -527,9 +526,7 @@ test('captures real Explore viewport states without screenshot-only styling', as
     await page.setViewportSize(viewport);
     await page.goto('/');
     await expect(page.locator('.place-card').first()).toBeVisible();
-    await expect(page.locator('.city-scope')).toContainText('Amsterdam');
-    await expect(page.locator('.city-scope')).toContainText('Rotterdam');
-    await expect(page.locator('.city-scope')).toContainText('Utrecht');
+    await expect(page.locator('.city-scope')).toHaveCount(0);
     await expect(page.getByRole('combobox')).toHaveCount(0);
     await waitForMapReady(page);
     await assertRealViewportGeometry(page, viewport);
@@ -547,17 +544,7 @@ test('captures real Explore viewport states without screenshot-only styling', as
 
     await page.goto('/');
     await waitForMapReady(page);
-    if (viewport.width < 1101) {
-      await expect(page.locator('.discover-panel')).toBeVisible();
-      await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-      await expect(page.locator('.discover-city-group')).toHaveCount(3);
-      await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
-      await assertRealViewportGeometry(page, viewport);
-      await page.screenshot({ path: join(screenshotsDirectory, `discover-active-${size}.png`) });
-    } else {
-      await expect(page.locator('.discover-panel')).toBeHidden();
-      await expect(page.getByRole('button', { name: 'Architecture Hunt' })).toBeHidden();
-    }
+    await expect(page.locator('.discover-panel')).toHaveCount(0);
 
     await page.goto('/');
     await waitForMapReady(page);
@@ -618,75 +605,59 @@ test('captures real Explore viewport states without screenshot-only styling', as
   finally { await cleanupCreatedPlans(page, owned, failed); }
 });
 
-test('keeps desktop Discover hidden while the map and catalog remain usable', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test('keeps the same catalog controls and content at every viewport', async ({ page }) => {
+  const discoverRequests: string[] = [];
+  page.on('request', request => {
+    if (new URL(request.url()).pathname === '/api/discover') discoverRequests.push(request.url());
+  });
   await page.goto('/');
-  await expect(page.locator('.place-card').first()).toBeVisible();
-  await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
-  await waitForMapReady(page);
-  // HOP6-002 intentionally hides Discover on desktop; retain coverage at narrower widths below.
-  await expect(page.locator('.discover-panel')).toBeHidden();
-  await expect(page.getByRole('button', { name: 'Architecture Hunt' })).toBeHidden();
-
-  const desktopGeometry = await page.evaluate(() => ({
-    mapWidth: document.querySelector('.map-viewport__canvas')!.getBoundingClientRect().width,
-    mapHeight: document.querySelector('.map-viewport__canvas')!.getBoundingClientRect().height,
-    documentWidth: document.documentElement.scrollWidth,
-    catalogHeading: document.querySelector('.place-results__heading h2')?.textContent?.trim(),
-  }));
-  expect(desktopGeometry.documentWidth).toBeLessThanOrEqual(1440);
-  expect(desktopGeometry.mapWidth).toBeGreaterThan(0);
-  expect(desktopGeometry.mapHeight).toBeGreaterThan(0);
-  expect(desktopGeometry.catalogHeading).toBe('Places to explore');
-  await expect(page.locator('#place-search')).toBeVisible();
-  await expect(page.locator('app-main-navigation a[href="/plans"]')).toHaveCount(1);
-
-  await page.setViewportSize({ width: 1024, height: 768 });
-  await expect(page.locator('.discover-panel')).toBeVisible();
-  const mapBefore = await page.locator('.map-viewport__canvas').boundingBox();
-  await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-  await expect(page.locator('.discover-city-group')).toHaveCount(3);
-  for (const cityName of ['Amsterdam', 'Rotterdam', 'Utrecht']) {
-    await expect(page.getByRole('region', { name: `Discover picks in ${cityName}` })).toBeVisible();
+  for (const width of [360, 390, 768, 900, 901, 1024, 1100, 1101, 1440, 1536, 1920]) {
+    await page.setViewportSize({ width, height: width <= 900 ? 844 : 900 });
+    await expect(page.locator('.discover-panel, .discover-theme, .discover-results, .city-scope')).toHaveCount(0);
+    await expect(page.getByRole('heading', { name: 'Discover by vibe', exact: true })).toHaveCount(0);
+    await expect(page.locator('.control-note, .footer-note, .place-card__tags')).toHaveCount(0);
+    await expect(page.locator('.intro')).toBeVisible();
+    await expect(page.locator('.saved-plans-link')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Categories', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Architecture Hunt|Culture Day|Green Escape/ })).toHaveCount(0);
+    await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
+    await waitForMapReady(page);
+    await openExplorePlaceByName(page, 'Royal Palace');
+    await expect(page.locator('.place-detail')).toContainText('Amsterdam');
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.place-detail')).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
   }
-  const mapAfter = await page.locator('.map-viewport__canvas').boundingBox();
-  expect(mapBefore).not.toBeNull();
-  expect(mapAfter).not.toBeNull();
-  expect(Math.abs(mapAfter!.x - mapBefore!.x)).toBeLessThanOrEqual(2);
-  expect(Math.abs(mapAfter!.y - mapBefore!.y)).toBeLessThanOrEqual(2);
-  expect(Math.abs(mapAfter!.width - mapBefore!.width)).toBeLessThanOrEqual(2);
-  expect(Math.abs(mapAfter!.height - mapBefore!.height)).toBeLessThanOrEqual(2);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(1024);
+  expect(discoverRequests).toEqual([]);
 });
 
-test('autosaves each city’s Discover picks once at tablet and mobile widths', async ({ page }) => {
+test('autosaves catalog places once for each starting city at tablet and mobile widths', async ({ page }) => {
   test.setTimeout(90_000);
   const owned: string[] = [];
   let failed = false;
   try {
     for (const viewport of [{ width: 1024, height: 768 }, { width: 390, height: 844 }]) {
       await page.setViewportSize(viewport);
-      for (const city of [{ id: 'amsterdam', name: 'Amsterdam' }, { id: 'rotterdam', name: 'Rotterdam' }, { id: 'utrecht', name: 'Utrecht' }]) {
+      for (const city of [
+        { id: 'amsterdam', place: 'Royal Palace' },
+        { id: 'rotterdam', place: 'Erasmus Bridge' },
+        { id: 'utrecht', place: 'Dom Tower' },
+      ]) {
         await page.goto('/plans/new?city=' + city.id);
         await page.locator('.editor-cancel').click();
-        await page.getByRole('button', { name: 'Architecture Hunt', exact: true }).click();
-        const group = page.getByRole('region', { name: 'Discover picks in ' + city.name });
-        await expect(group.locator('.discover-pick').first()).toBeVisible();
-        const count = await group.locator('.discover-pick').count();
-        const save = page.waitForResponse(response => response.request().method() === 'PUT' && new URL(response.url()).pathname.endsWith('/autosave'));
-        const add = group.getByRole('button', { name: 'Add ' + city.name + ' picks to plan', exact: true });
-        await add.click();
-        const response = await save;
-        expect(response.status()).toBe(200);
-        const plan = await response.json() as { id: string; cityId: string; placeIds: string[] };
+        await openExplorePlaceByName(page, city.place);
+        const plan = await confirmMapAddition(page);
         owned.push(plan.id);
-        expect(plan.cityId).toBe(city.id);
-        expect(plan.placeIds).toHaveLength(count);
-        await expect(page.locator('.draft-count')).toHaveText(count + ' / 12');
-        await add.click();
-        await expect(page.locator('.draft-feedback')).toContainText('already in this plan');
+        expect(plan.placeIds).toHaveLength(1);
+        await page.locator('.place-detail').getByRole('button', { name: 'Already added', exact: true }).click();
+        await expect(page.locator('.draft-feedback')).toHaveText('Those places are already in this plan.');
         await page.reload();
         await expect(page.getByRole('link', { name: 'Review current plan', exact: true })).toHaveAttribute('href', '/plans/' + plan.id);
+        await expect(page.locator('.draft-count')).toHaveText('1 / 12');
+        const saved = await page.request.get('/api/plans/' + plan.id);
+        const persisted = await saved.json() as { cityId: string; placeIds: string[] };
+        expect(persisted.cityId).toBe(city.id);
+        expect(persisted.placeIds).toEqual(plan.placeIds);
         expect((await page.request.delete('/api/plans/' + plan.id)).status()).toBe(204);
       }
     }
@@ -701,31 +672,42 @@ test('checks responsive geometry and captures the actual shared-city interface',
   await page.goto('/');
   await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
 
+  const expectMapAndPlanTogether = async () => {
+    const layout = await page.evaluate(() => {
+      const map = document.querySelector('.explore-main')!.getBoundingClientRect();
+      const plan = document.querySelector('.draft-panel')!.getBoundingClientRect();
+      return { gap: plan.top - map.bottom, leftDifference: Math.abs(plan.left - map.left), widthDifference: Math.abs(plan.width - map.width) };
+    });
+    expect(layout.gap, 'The plan panel should sit directly below the map').toBeGreaterThanOrEqual(0);
+    expect(layout.gap, 'The plan panel should stay close to the map').toBeLessThanOrEqual(24);
+    expect(layout.leftDifference).toBeLessThanOrEqual(1);
+    expect(layout.widthDifference).toBeLessThanOrEqual(1);
+  };
+
   for (const viewport of [
     { width: 360, height: 800 },
     { width: 390, height: 844 },
     { width: 768, height: 1024 },
+    { width: 901, height: 700 },
     { width: 1024, height: 768 },
+    { width: 1100, height: 860 },
     { width: 1440, height: 900 },
+    { width: 1536, height: 864 },
+    { width: 1920, height: 1080 },
   ]) {
     await page.setViewportSize(viewport);
     await page.goto('/');
-    await expect(page.locator('.city-scope')).toContainText('Amsterdam');
-    await expect(page.locator('.city-scope')).toContainText('Rotterdam');
-    await expect(page.locator('.city-scope')).toContainText('Utrecht');
+    await expect(page.locator('.city-scope')).toHaveCount(0);
     await expect(page.getByRole('combobox')).toHaveCount(0);
     await expect(page.locator('.filter-row')).toBeVisible();
     await expect(page.locator('.place-results__heading h2')).toHaveText('Places to explore');
     await expect(page.locator('.maplibregl-ctrl-attrib')).toContainText('OpenFreeMap');
     if (viewport.width <= 390) {
-      for (const selector of ['.search-box', '.filter-chip', '.discover-theme', '.bottom-nav__item']) {
+      for (const selector of ['.search-box', '.filter-chip', '.draft-editor-link', '.bottom-nav__item']) {
         const bounds = await page.locator(selector).first().boundingBox();
         expect(bounds?.width, `${selector} width at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
         expect(bounds?.height, `${selector} height at ${viewport.width}px`).toBeGreaterThanOrEqual(44);
       }
-      await expect(page.locator('.discover-panel')).toBeVisible();
-    } else if (viewport.width >= 1101) {
-      await expect(page.locator('.discover-panel')).toBeHidden();
     }
     await expect.poll(async () => page.locator('.map-viewport__canvas').evaluate((mapHost) => {
       const canvas = mapHost.querySelector('canvas');
@@ -734,6 +716,7 @@ test('checks responsive geometry and captures the actual shared-city interface',
 
     const documentWidth = await page.evaluate(() => document.documentElement.scrollWidth);
     expect(documentWidth).toBeLessThanOrEqual(viewport.width);
+    await expectMapAndPlanTogether();
 
     const attribution = page.locator('.maplibregl-ctrl-attrib');
     await attribution.scrollIntoViewIfNeeded();
@@ -753,8 +736,12 @@ test('checks responsive geometry and captures the actual shared-city interface',
       { width: 360, name: 'Royal Palace' },
       { width: 390, name: 'Erasmus Bridge' },
       { width: 768, name: 'Dom Tower' },
+      { width: 901, name: 'Royal Palace' },
       { width: 1024, name: 'Royal Palace' },
+      { width: 1100, name: 'Dom Tower' },
       { width: 1440, name: 'Erasmus Bridge' },
+      { width: 1536, name: 'Royal Palace' },
+      { width: 1920, name: 'Erasmus Bridge' },
     ].find((place) => place.width === viewport.width)!;
     await page.locator('#place-search').fill(featuredForViewport.name);
     const firstCard = page.locator('.place-card').filter({ hasText: featuredForViewport.name });
@@ -773,15 +760,8 @@ test('checks responsive geometry and captures the actual shared-city interface',
     await page.keyboard.press('Escape');
     await expect(detail).toHaveCount(0);
 
-    if (viewport.width < 1101) {
-      await page.getByRole('button', { name: 'Architecture Hunt' }).click();
-      await expect(page.locator('.discover-city-group')).toHaveCount(3);
-      await expect(page.locator('.discover-pick').first()).toBeVisible({ timeout: 15_000 });
-      expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(viewport.width);
-      await page.screenshot({ path: join(screenshotsDirectory, `editorial-discover-active-${viewportLabel}.png`) });
-    } else {
-      await expect(page.locator('.discover-panel')).toBeHidden();
-    }
+    await expect(page.locator('.discover-panel')).toHaveCount(0);
+    await expectMapAndPlanTogether();
 
     await page.unroute(openFreeMapStyleUrl);
     await page.route(openFreeMapStyleUrl, (route) =>

@@ -99,8 +99,14 @@ function Install-HopOnArchive {
     if (Test-Path -LiteralPath $Destination) {
         throw "Invalid local tool cache: $Destination. Rename it or configure a valid installed tool before retrying."
     }
-    $runtime = [IO.Path]::GetFullPath($hopOnBootstrapRoot)
-    $staging = Join-Path $runtime ('bootstrap-' + [guid]::NewGuid().ToString('N'))
+    $runtime = [IO.Path]::GetFullPath((Join-Path $hopOnTools 'runtime'))
+    # Keep one short staging directory per launch. Nesting it under the log directory
+    # makes npm's archive entries exceed Windows PowerShell 5.1's path limit.
+    $staging = [IO.Path]::GetFullPath($hopOnBootstrapRoot)
+    if ((Split-Path -Parent $staging) -ne $runtime -or
+        (Split-Path -Leaf $staging) -notmatch '^bootstrap-[a-f0-9]{32}$') {
+        throw 'Tool staging path is outside the expected runtime directory.'
+    }
     $archive = Join-Path $staging 'download.zip'
     $extracted = Join-Path $staging 'extracted'
     New-Item -ItemType Directory -Path $extracted -Force | Out-Null
@@ -306,7 +312,7 @@ function Stop-HopOnOwnedProcesses {
 if ($Service) {
     try {
         if ($Service -eq 'Setup') {
-            $hopOnBootstrapRoot = Join-Path $RunDirectory 'bootstrap'
+            $hopOnBootstrapRoot = Join-Path $hopOnTools ('runtime/bootstrap-' + $RunId)
             $nodeHome = Initialize-HopOnEnvironment
             Install-HopOnFrontendDependencies $nodeHome
             exit 0
@@ -331,6 +337,7 @@ $stateWritten = $false
 $runtime = Join-Path $PSScriptRoot 'runtime'
 $stateFile = Join-Path $runtime 'app-state.json'
 $hopOnRunId = [guid]::NewGuid().ToString('N')
+$hopOnBootstrapRoot = Join-Path $runtime ('bootstrap-' + $hopOnRunId)
 $stopRequestFile = Join-Path $runtime ("stop-" + $hopOnRunId + '.request')
 $launcherStartedUtcTicks = [Diagnostics.Process]::GetCurrentProcess().StartTime.ToUniversalTime().Ticks.ToString()
 try {
@@ -362,7 +369,6 @@ try {
     $processes = @()
     Save-HopOnState
     # Setup ran in an interruptible worker; select its now-available runtimes for the services.
-    $hopOnBootstrapRoot = Join-Path $logs 'bootstrap'
     $nodeHome = Initialize-HopOnEnvironment
     Assert-HopOnContinue
     if ($SetupOnly) {
@@ -402,11 +408,10 @@ catch {
 finally {
     $allStopped = Stop-HopOnOwnedProcesses
     foreach ($process in $processes) { $process.Dispose() }
-    if ($logs) {
-        $bootstrap = [IO.Path]::GetFullPath((Join-Path $logs 'bootstrap'))
-        $expectedParent = [IO.Path]::GetFullPath($logs)
-        if ((Split-Path -Parent $bootstrap) -eq $expectedParent -and
-            $expectedParent.StartsWith([IO.Path]::GetFullPath($runtime) + '\', [StringComparison]::OrdinalIgnoreCase) -and
+    if ($hopOnBootstrapRoot) {
+        $bootstrap = [IO.Path]::GetFullPath($hopOnBootstrapRoot)
+        if ((Split-Path -Parent $bootstrap) -eq [IO.Path]::GetFullPath($runtime) -and
+            (Split-Path -Leaf $bootstrap) -eq ('bootstrap-' + $hopOnRunId) -and
             (Test-Path -LiteralPath $bootstrap)) {
             Remove-Item -LiteralPath $bootstrap -Recurse -Force -ErrorAction SilentlyContinue
         }

@@ -371,7 +371,7 @@ test('keeps the shared draft CTA before the catalog and opens the selected POI c
   await reviewLink.click();
   await expect(page).toHaveURL(`/plans/${saved.id}`);
   await expect(page.locator('#saved-plan-name')).toHaveValue(saved.name);
-  await expect(page.locator('.details-city-label')).toHaveText('Starts in Rotterdam');
+  await expect(page.locator('.details-city-label')).toHaveCount(0);
   await expect(page.locator('.details-stop__copy')).toContainText(placeName);
   } catch (error) { failed = true; throw error; }
   finally { await cleanupCreatedPlans(page, owned, failed); }
@@ -750,8 +750,15 @@ test('checks responsive geometry and captures the actual shared-city interface',
     await firstCard.click();
     const detail = page.locator('.place-detail');
     await expect(detail).toContainText(featuredForViewport.name);
+    const closeButton = detail.locator('.place-detail__close');
+    const closeIcon = closeButton.locator('svg');
+    const closeBounds = await closeButton.boundingBox();
+    const iconBounds = await closeIcon.boundingBox();
+    expect(closeBounds).not.toBeNull();
+    expect(iconBounds).not.toBeNull();
+    expect(Math.abs(closeBounds!.x + closeBounds!.width / 2 - iconBounds!.x - iconBounds!.width / 2)).toBeLessThanOrEqual(1);
+    expect(Math.abs(closeBounds!.y + closeBounds!.height / 2 - iconBounds!.y - iconBounds!.height / 2)).toBeLessThanOrEqual(1);
     if (viewport.width <= 390) {
-      const closeBounds = await detail.locator('.place-detail__close').boundingBox();
       expect(closeBounds?.width).toBeGreaterThanOrEqual(44);
       expect(closeBounds?.height).toBeGreaterThanOrEqual(44);
     }

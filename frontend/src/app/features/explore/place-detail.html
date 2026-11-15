@@ -8,7 +8,9 @@
       aria-label="Close place details"
       (click)="closed.emit()"
     >
-      <span aria-hidden="true">&#215;</span>
+      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+      </svg>
     </button>
   </div>
   <figure class="place-detail__visual" [class.place-detail__visual--image]="isLicensedLocalImage()">

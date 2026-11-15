@@ -31,8 +31,6 @@
   min-width: 0;
 }
 
-.details-city-label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-
 .details-name-card {
   padding: 16px;
   border: 1px solid #e8d9c3;
@@ -182,7 +180,7 @@
 
 .details-section-heading {
   display: flex;
-  align-items: end;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: 15px;
@@ -201,10 +199,16 @@
 }
 
 .details-stop-count {
+  display: inline-flex;
+  min-height: 34px;
   flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
   font-size: 13px;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
-  padding: 6px 10px;
+  /* Lift the numeral baseline by 1px for optical centering. */
+  padding: 0 10px 2px;
   border: 1px solid #e4d4bb;
   border-radius: 999px;
   background: #f7efdf;
@@ -388,13 +392,16 @@
   display: inline-flex;
   min-height: 40px;
   align-items: center;
+  justify-content: center;
   gap: 7px;
   padding: 0 12px;
   border-radius: 12px;
   font-size: 12px;
+  line-height: 1;
   white-space: nowrap;
 }
-.details-explore-map img { display: block; width: 28px; height: 28px; flex: 0 0 auto; }
+.details-explore-map img { display: block; width: 24px; height: 24px; flex: 0 0 24px; object-fit: contain; }
+.details-explore-map span { display: block; }
 
 .details-unsaved-note {
   margin-left: auto;

@@ -36,10 +36,11 @@
   border-radius: 50%;
   background: #fff;
   color: #465653;
-  font-size: 26px;
+  line-height: 0;
   cursor: pointer;
 }
 
+.place-detail__close svg { display: block; width: 18px; height: 18px; }
 .place-detail__close:hover { background: #f5eddf; }
 .place-detail__visual { display: flex; min-height: 98px; align-items: center; justify-content: center; flex-direction: column; gap: 7px; margin: 5px 0 11px; overflow: hidden; border-radius: 12px; background: linear-gradient(135deg, #eee4d1, #f7eee3); color: #5c6964; font-size: 12px; text-align: center; }
 .place-detail__visual--image { position: relative; display: block; min-height: 0; flex: 0 0 auto; background: #f1f4f0; }

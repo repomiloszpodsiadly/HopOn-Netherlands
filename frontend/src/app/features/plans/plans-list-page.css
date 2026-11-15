@@ -7,7 +7,7 @@
 .plans-back-places svg { width: 16px; height: 16px; }
 .plans-back-places:hover { border-color: #bca682; background: #f6eddf; }
 .plans-list-heading > .plans-button { gap: 10px; }
-.plans-list-heading > .plans-button > span { font-size: 24px; font-weight: 400; line-height: 1; }
+.plans-list-heading > .plans-button > svg { display: block; width: 20px; height: 20px; flex: 0 0 auto; }
 .plans-collection-heading { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; color: #746e5d; font-size: 12px; }
 .plans-collection-heading p { margin: 0; font-weight: 700; letter-spacing: .4px; }
 .plans-collection-heading > span { padding: 5px 10px; border: 1px solid #e9ddca; border-radius: 999px; background: #faf3e7; font-variant-numeric: tabular-nums; }

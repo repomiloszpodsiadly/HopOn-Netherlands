@@ -52,11 +52,18 @@ html {
 
 body {
   margin: 0;
+  caret-color: transparent;
   background: linear-gradient(135deg, #f4dac4, #fcf2e4 55%, #edd4be);
   color: var(--color-ink);
   font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+}
+
+input,
+textarea,
+[contenteditable]:not([contenteditable='false']) {
+  caret-color: auto;
 }
 
 :where(.plans-shell, .plan-editor-shell, .plan-details-shell) {

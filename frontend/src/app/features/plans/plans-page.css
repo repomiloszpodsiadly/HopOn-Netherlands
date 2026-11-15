@@ -62,14 +62,6 @@
   font-weight: 400;
 }
 
-.plans-intro {
-  max-width: 560px;
-  margin: 0;
-  color: var(--color-muted);
-  font-size: 15px;
-  line-height: 1.65;
-}
-
 .plans-actions {
   display: flex;
   flex-wrap: wrap;
@@ -188,10 +180,6 @@
 
 .plans-list-heading h1 {
   margin: 9px 0 12px;
-}
-
-.plans-list-heading .plans-intro {
-  max-width: 560px;
 }
 
 .plans-list-heading > .plans-button {

@@ -11,18 +11,20 @@
       <div class="plans-list-heading__copy">
         <p class="plans-eyebrow">YOUR CITY DAYS</p>
         <div class="plans-title-row">
-          <h1 id="saved-plans-title">Saved <em>Plans.</em></h1>
+          <h1 id="saved-plans-title">Saved <em>Plans</em></h1>
           <a class="plans-back-places" appPointerLight routerLink="/">
             <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m10 5-7 7 7 7M3 12h18" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Back to places
           </a>
         </div>
-        <p class="plans-intro">Your next days out, all in one place.</p>
       </div>
       @if (atCapacity()) {
         <button class="plans-button plans-button--primary" type="button" disabled aria-describedby="plan-capacity-message">6 / 6 plans</button>
       } @else {
-        <a class="plans-button plans-button--primary" appPointerLight routerLink="/plans/new"><span aria-hidden="true">+</span> Create a plan</a>
+        <a class="plans-button plans-button--primary" appPointerLight routerLink="/plans/new">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" /></svg>
+          Create a plan
+        </a>
       }
     </div>
 

@@ -22,7 +22,8 @@ HopOn is a local city guide and sightseeing planner for Amsterdam, Rotterdam and
 | `backend/src/main/resources/catalog/` | City, place and mobility-hub snapshots with provenance |
 | `backend/src/test/` | Backend unit and integration tests |
 | `frontend/public/assets/` | Application imagery and photo attribution |
-| `.tools/run-backend.ps1` | Windows JDK selection and API startup |
+| `.tools/run-app.ps1` | Windows tool setup and full application startup |
+| `.tools/stop-app.ps1` | Stops this checkout's recorded launcher-owned processes |
 
 Plan backend code is organized into `plans/api` for HTTP contracts, `plans/application` for use cases, and `plans/persistence` for JPA entities and repositories.
 

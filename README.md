@@ -175,7 +175,7 @@ Playwright starts its own frontend on **port 4300**, uses the real API/H2 and ru
 | Storage | In-memory H2 for saved plans; tab-scoped browser drafts |
 | Verification | Gradle wrapper, JUnit/Spring tests, ESLint, Vitest and Playwright |
 
-Catalog places and mobility hubs come from checked-in JSON with startup validation and provenance. Cities load independently so partial failures retain usable results. Autosave uses a persisted UUID and idempotent `PUT /api/plans/{id}/autosave`; synchronized creation protects plan capacity and numbered names. Controllers map HTTP contracts, application services own validation/transactions and repositories preserve place order and timestamps.
+Catalog cities, places and mobility hubs are loaded from checked-in JSON without catalog validation at startup. Cities load independently so partial failures retain usable results. Autosave uses a persisted UUID and idempotent `PUT /api/plans/{id}/autosave`; synchronized creation protects plan capacity and numbered names. Controllers map HTTP contracts, application services own validation/transactions and repositories preserve place order and timestamps.
 
 Discover ranks categories and tags deterministically. Nearby hubs use approximate straight-line distances. The application does not provide AI recommendations, live transit schedules, route optimization or turn-by-turn directions. Catalog search and planning remain usable when map loading fails.
 
@@ -190,7 +190,7 @@ Discover ranks categories and tags deterministically. Nearby hubs use approximat
 
 ## Data, attribution and license
 
-The OpenStreetMap catalog contains **2,707 places and 18 curated mobility hubs**. The [provenance manifest](backend/src/main/resources/catalog/provenance.json) records sources, selection rules and the ODbL 1.0 license.
+The OpenStreetMap catalog contains **2,707 places and 18 curated mobility hubs**. The [provenance manifest](backend/src/main/resources/catalog/provenance.json) records sources, selection rules and the ODbL 1.0 license. It is documentation, not a runtime startup check. Adding or removing cities, places or hubs does not require matching fixed counts, city lists, coverage, bounds or ordering rules.
 
 Map resources use OpenFreeMap with OpenMapTiles and OpenStreetMap attribution. They need internet access; the fallback is not an offline map. Featured photos retain sources, authors, licenses and change notices in the [photo attribution manifest](frontend/public/assets/catalog/assets-attribution.json).
 

@@ -6,7 +6,7 @@ HopOn is a local city guide and sightseeing planner for Amsterdam, Rotterdam and
 
 The application has an Angular frontend, a Spring Boot API and an embedded H2 database. It needs no API key, user account or separate database installation.
 
-[Start](#run-locally) · [Stop](#stop-the-application) · [Checks](#checks) · [Technical approach](#technical-approach)
+[Demo GIF](HopOn-in-action.gif) · [Start](#run-locally) · [Stop](#stop-the-application) · [Checks](#checks) · [Technical approach](#technical-approach)
 
 ## Run locally
 
@@ -112,7 +112,7 @@ To try the app on a phone connected to the same trusted Wi-Fi, use the two-termi
 
 ## Using HopOn and keeping plans
 
-Search and filter architecture, museums, culture, parks and nature, or landmarks. Select a card or map marker for details, photo credits and curated nearby hubs. Discover offers Architecture Hunt, Culture Day and Green Escape on tablet and mobile layouts; desktop prioritizes the catalog and map.
+Search and filter architecture, museums, culture, parks and nature, or landmarks. Select a card or map marker for details, photo credits and curated nearby hubs. The catalog, map and plan controls are available across desktop, tablet and mobile layouts.
 
 For a short first journey:
 
@@ -177,20 +177,20 @@ Playwright starts its own frontend on **port 4300**, uses the real API/H2 and ru
 
 Catalog cities, places and mobility hubs are loaded from checked-in JSON without catalog validation at startup. Cities load independently so partial failures retain usable results. Autosave uses a persisted UUID and idempotent `PUT /api/plans/{id}/autosave`; synchronized creation protects plan capacity and numbered names. Controllers map HTTP contracts, application services own validation/transactions and repositories preserve place order and timestamps.
 
-Discover ranks categories and tags deterministically. Nearby hubs use approximate straight-line distances. The application does not provide AI recommendations, live transit schedules, route optimization or turn-by-turn directions. Catalog search and planning remain usable when map loading fails.
+Nearby hubs use approximate straight-line distances. The application does not provide AI recommendations, live transit schedules, route optimization or turn-by-turn directions. Catalog search and planning remain usable when map loading fails.
 
 | Path | Contents |
 | --- | --- |
 | `frontend/src/app/core/` | API clients, shared types and tab state |
-| `frontend/src/app/features/` | Explore, map, Discover, plans and shared UI |
+| `frontend/src/app/features/` | Explore, map, plans and shared UI |
 | `frontend/e2e/` | Browser scenarios and deterministic fixtures |
 | `backend/src/main/java/com/hopon/` | Catalog, health, transit and plan packages |
-| `backend/src/main/resources/catalog/` | Catalog snapshots and provenance |
+| `backend/src/main/resources/catalog/` | City, place and mobility-hub JSON snapshots |
 | `.tools/` | Start/stop scripts and ignored local runtimes/logs |
 
 ## Data, attribution and license
 
-The OpenStreetMap catalog contains **2,707 places and 18 curated mobility hubs**. The [provenance manifest](backend/src/main/resources/catalog/provenance.json) records sources, selection rules and the ODbL 1.0 license. It is documentation, not a runtime startup check. Adding or removing cities, places or hubs does not require matching fixed counts, city lists, coverage, bounds or ordering rules.
+The OpenStreetMap catalog contains **2,707 places and 18 curated mobility hubs**. The [provenance manifest](backend/src/main/resources/catalog/provenance.json) records sources, selection rules and the ODbL 1.0 license. The application loads `cities.json`, `places.json` and `stops.json` directly; the manifest is reference metadata. Adding or removing cities, places or hubs does not require matching fixed counts, city lists, coverage, bounds or ordering rules.
 
 Map resources use OpenFreeMap with OpenMapTiles and OpenStreetMap attribution. They need internet access; the fallback is not an offline map. Featured photos retain sources, authors, licenses and change notices in the [photo attribution manifest](frontend/public/assets/catalog/assets-attribution.json).
 

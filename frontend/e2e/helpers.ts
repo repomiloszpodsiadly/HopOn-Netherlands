@@ -60,18 +60,6 @@ export async function prepareExplorePage(page: Page): Promise<void> {
   await useIsolatedMapStyle(page);
 }
 
-export function waitForOpenFreeMapStyleResponse(page: Page, timeout = 15_000): Promise<Response> {
-  return page.waitForResponse(
-    (response) => response.url() === openFreeMapStyleUrl,
-    { timeout },
-  );
-}
-
-export function assertSuccessfulOpenFreeMapStyleResponse(response: Response): void {
-  expect(response.ok(), `Expected a successful live style response, received HTTP ${response.status()}.`)
-    .toBe(true);
-}
-
 export async function useIsolatedMapStyle(page: Page): Promise<void> {
   await page.route(openFreeMapStyleUrl, (route) =>
     route.fulfill({

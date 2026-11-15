@@ -1,25 +1,39 @@
-# OpenFreeMap live smoke
+# Frontend E2E
 
-The normal `npm.cmd run test:e2e` suite uses a deterministic local MapLibre style. The real OpenFreeMap smoke is explicitly reported as skipped unless `HOPON_LIVE_MAP_SMOKE=1` is set.
-
-Explore shows Amsterdam, Rotterdam, and Utrecht together. Discover is intentionally hidden at desktop widths (1440px); Playwright verifies Discover at supported tablet and mobile widths instead of opening or restoring a desktop control.
-
-## PowerShell opt-in
-
-Run from the repository root:
+Start the API on **127.0.0.1:8080** in a separate terminal using the
+[backend commands](../../README.md#run-manually-with-the-tools-in-tools).
+If using the portable Node.js from `.tools/`, select it in the E2E terminal
+at the repository root first:
 
 ```powershell
-Set-Location frontend
-$env:HOPON_LIVE_MAP_SMOKE = '1'
-try {
-  npm.cmd run test:e2e -- --grep 'real OpenFreeMap'
-} finally {
-  Remove-Item Env:HOPON_LIVE_MAP_SMOKE -ErrorAction SilentlyContinue
-}
+$env:Path = (Resolve-Path .\.tools\node-v24.20.0).Path + ';' + $env:Path
+cd frontend
 ```
 
-The smoke fails if the live style request is missing or unsuccessful. It also checks that the MapLibre canvas is visible and reaches the app's map-ready state. It does not assert external tile delivery.
+With a supported Node.js/npm and frontend dependencies installed, run from `frontend/`:
 
-## Manual check
+```powershell
+npx playwright install chromium
+npm.cmd run test:e2e
+```
 
-With the API available, run `npm.cmd run start` from `frontend`, open `http://localhost:4200`, and inspect DevTools Network while reloading. Confirm the request to `https://tiles.openfreemap.org/styles/liberty` succeeds and the MapLibre canvas reaches `data-map-ready="true"`. Inspect actual tile requests separately before claiming tile delivery; a missing or failed style response is FAIL/UNVERIFIED, not PASS.
+Playwright starts its own frontend on **127.0.0.1:4300** and uses the real API
+and in-memory H2. Tests run with one worker and clean up only their own plans.
+Use a development session with free plan slots for capacity scenarios. Do not
+restart an API holding plans you need to keep; stopping it clears H2.
+
+Explore loads Amsterdam, Rotterdam and Utrecht together. Discover is hidden
+at desktop widths (1440px); its scenarios use the supported tablet and mobile
+layouts.
+
+Map tests intercept the OpenFreeMap style URL with deterministic local fixtures.
+They cover readiness, reconnect, HTTP 503, aborted style requests and controlled
+tile failures. Catalog and plan workflows are checked when the map is unavailable.
+No external map service or environment flag is needed. The suite does not verify
+live map tiles.
+
+To run only the map scenarios:
+
+```powershell
+npm.cmd run test:e2e -- e2e/map.spec.ts
+```

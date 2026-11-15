@@ -52,7 +52,7 @@ Run checks appropriate to the change; commands and prerequisites are documented 
 - Backend: `cd backend`, then `.\gradlew.bat test`; the full build gate is `.\gradlew.bat clean test bootJar`.
 - Frontend: from `frontend/`, run `npm.cmd run lint`, `npm.cmd run typecheck`, `npm.cmd run test` and `npm.cmd run build`.
 - Browser: with the API running on 8080, use `npm.cmd run test:e2e` from `frontend/`. Playwright starts its own frontend and runs one worker against the real API/H2. Tests track and clean up only their own plans.
-- The normal E2E map style is deterministic. The external OpenFreeMap smoke is opt-in; see [the E2E guide](frontend/e2e/README.md). Style readiness alone does not verify live tile delivery.
+- E2E map styles and failures use deterministic fixtures; see [the E2E guide](frontend/e2e/README.md). The suite does not depend on live OpenFreeMap services or verify live tile delivery.
 - Keep assertions tied to agreed behavior. Update obsolete fixtures or expectations without dropping scenarios or hiding failures. Report which checks actually ran and any remaining limitations.
 
 ## Repository hygiene

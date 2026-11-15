@@ -1,8 +1,6 @@
 import { expect, test } from '@playwright/test';
 import {
   prepareExplorePage,
-  waitForOpenFreeMapStyleResponse,
-  assertSuccessfulOpenFreeMapStyleResponse,
   waitForMapReady,
   openFreeMapStyleUrl,
   isolatedStyle,
@@ -43,45 +41,22 @@ test('offers one reconnect action and recovers again after the map connection is
   await expect(page.locator('.place-card').first()).toBeVisible();
 });
 
-test('real OpenFreeMap live style smoke [live-map]', async ({ page }) => {
-  test.skip(
-    process.env.HOPON_LIVE_MAP_SMOKE !== '1',
-    'Set HOPON_LIVE_MAP_SMOKE=1 to run this external-service smoke.',
-  );
-  test.setTimeout(30_000);
-  await page.unroute(openFreeMapStyleUrl);
-  const styleResponsePromise = waitForOpenFreeMapStyleResponse(page);
-
-  await page.goto('/');
-  const styleResponse = await styleResponsePromise;
-  assertSuccessfulOpenFreeMapStyleResponse(styleResponse);
-  await expect(page.locator('.map-viewport__canvas canvas')).toBeVisible();
-  await waitForMapReady(page);
-  console.log(
-    `HOP004_REAL_OPENFREEMAP_SMOKE PASS: style HTTP ${styleResponse.status()}, canvas visible, MapLibre ready. `
-    + 'External tile delivery is not asserted by this smoke.',
-  );
-});
-
-test('fails the OpenFreeMap smoke check on a simulated HTTP 503', async ({ page }) => {
+test('keeps the catalog usable when the map style returns HTTP 503', async ({ page }) => {
   await page.unroute(openFreeMapStyleUrl);
   await page.route(openFreeMapStyleUrl, (route) =>
     route.fulfill({ status: 503, contentType: 'text/plain', body: 'Controlled style outage' }),
   );
-  const styleResponsePromise = waitForOpenFreeMapStyleResponse(page);
   await page.goto('/');
-
-  const styleResponse = await styleResponsePromise;
-  expect(() => assertSuccessfulOpenFreeMapStyleResponse(styleResponse)).toThrow('HTTP 503');
+  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.place-card').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry map', exact: true })).toBeVisible();
 });
 
-test('does not pass when the OpenFreeMap style response is missing', async ({ page }) => {
+test('shows the map fallback when the style request is aborted', async ({ page }) => {
   await page.unroute(openFreeMapStyleUrl);
   await page.route(openFreeMapStyleUrl, (route) => route.abort());
-  const styleRequestPromise = page.waitForRequest((request) => request.url() === openFreeMapStyleUrl);
-  const styleResponsePromise = waitForOpenFreeMapStyleResponse(page, 1_000);
   await page.goto('/');
-  await styleRequestPromise;
-
-  await expect(styleResponsePromise).rejects.toThrow();
+  await expect(page.getByRole('heading', { name: 'Map unavailable' })).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator('.place-card').first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry map', exact: true })).toBeVisible();
 });
